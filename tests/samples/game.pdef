@@ -1,0 +1,51 @@
+// Game protocol definition example
+// Demonstrates nested structures and multiple types
+
+@protocol {
+    name = "MyGameProtocol";
+    ports = 7777, 7778;
+    endian = big;
+}
+
+@const {
+    MAGIC = 0xDEADBEEF;
+    TYPE_LOGIN = 0x01;
+    TYPE_LOGOUT = 0x02;
+    TYPE_MOVE = 0x03;
+    TYPE_CHAT = 0x04;
+    VERSION = 1;
+}
+
+// Protocol header
+Header {
+    uint32  magic;
+    uint8   version;
+    uint8   packet_type;
+    uint16  flags;
+    uint32  player_id;
+    uint32  sequence;
+}
+
+// Player information
+Player {
+    uint32      player_id;
+    uint16      level;
+    uint8       status;
+    bytes[16]   nickname;
+}
+
+// Position structure
+Position {
+    int32   x;
+    int32   y;
+    int32   z;
+}
+
+// Game packet
+GamePacket {
+    Header      header;
+    Player      player;
+    Position    pos;
+    uint32      room_id;
+    uint32      timestamp;
+}

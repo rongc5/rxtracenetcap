@@ -1,0 +1,72 @@
+// IEC 60870-5-104 General Interrogation (总召) quick definition
+
+@protocol {
+    name = "IEC104";
+    ports = 2404;      // Default IEC 104 TCP port
+    endian = little;   // Multi-byte fields use little-endian on the wire
+}
+
+@const {
+    START_CHAR      = 0x68;
+    TYPE_GI         = 100;   // C_IC_NA_1
+    COT_ACT         = 6;     // Activation
+    COT_ACTCONF     = 7;     // Activation confirmation
+    COT_TERM        = 10;    // Termination
+    QOI_ALL         = 20;    // Qualifier of interrogation = all stations (0x14)
+}
+
+APCI {
+    uint8  start;       // 0x68
+    uint8  apdu_len;    // APDU length (ASDU + control)
+    uint8  ctrl1;
+    uint8  ctrl2;
+    uint8  ctrl3;
+    uint8  ctrl4;
+}
+
+ASDU {
+    uint8   type_id;        // Type identification
+    uint8   vsq;            // Variable structure qualifier
+    uint16  cot;            // Cause of transmission (little-endian)
+    uint16  common_addr;    // Common address of ASDU
+    bytes[3] info_addr;     // Information object address (3 bytes)
+    uint8   qoi;            // Qualifier of interrogation
+}
+
+IEC104Frame {
+    APCI apci;
+    ASDU asdu;
+}
+
+// Filters for General Interrogation (总召)
+
+// Traditional mode: match from packet beginning
+@filter GI_Activation {
+    apci.start = START_CHAR;
+    asdu.type_id = TYPE_GI;
+    asdu.cot = COT_ACT;
+    asdu.qoi = QOI_ALL;
+}
+
+// Sliding window mode: search anywhere in packet (within first 512 bytes)
+@filter GI_Anywhere {
+    sliding = true;          // Enable sliding window search
+    sliding_max = 512;       // Limit search to first 512 bytes (optional)
+    apci.start = START_CHAR;
+    asdu.type_id = TYPE_GI;
+    asdu.qoi = QOI_ALL;
+}
+
+@filter GI_ActivationConfirm {
+    apci.start = START_CHAR;
+    asdu.type_id = TYPE_GI;
+    asdu.cot = COT_ACTCONF;
+    asdu.qoi = QOI_ALL;
+}
+
+@filter GI_Termination {
+    apci.start = START_CHAR;
+    asdu.type_id = TYPE_GI;
+    asdu.cot = COT_TERM;
+    asdu.qoi = QOI_ALL;
+}

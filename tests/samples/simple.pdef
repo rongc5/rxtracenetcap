@@ -1,0 +1,29 @@
+// Simple protocol definition example
+// This demonstrates basic protocol structure with header and simple filtering
+
+@protocol {
+    name = "SimpleProtocol";
+    ports = 8080, 8081;
+    endian = big;
+}
+
+@const {
+    MAGIC = 0x12345678;
+    VERSION_1 = 1;
+    VERSION_2 = 2;
+}
+
+// Simple header structure
+Header {
+    uint32  magic;
+    uint8   version;
+    uint8   msg_type;
+    uint16  flags;
+}
+
+// Complete packet structure
+Packet {
+    Header  header;
+    uint32  payload_len;
+    uint32  checksum;
+}

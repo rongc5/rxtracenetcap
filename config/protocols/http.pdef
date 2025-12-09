@@ -1,0 +1,62 @@
+// HTTP Protocol Definition
+// HTTP is a text-based protocol, so we match on common patterns
+
+@protocol {
+    name = "HTTP";
+    ports = 80, 8080, 8000, 8888;
+    endian = big;
+}
+
+@const {
+    // HTTP method bytes (first 4 bytes)
+    GET_     = 0x47455420;  // "GET "
+    POST_    = 0x504F5354;  // "POST"
+    PUT_     = 0x50555420;  // "PUT "
+    HEAD_    = 0x48454144;  // "HEAD"
+    DELETE_  = 0x44454C45;  // "DELE"
+
+    // HTTP response status line (first 4 bytes)
+    HTTP_1_1 = 0x48545450;  // "HTTP"
+    HTTP_200 = 0x32303020;  // "200 " (after "HTTP/1.1 ")
+    HTTP_404 = 0x34303420;  // "404 "
+    HTTP_500 = 0x35303020;  // "500 "
+}
+
+// HTTP Request structure
+HTTPRequest {
+    uint32  method;         // First 4 bytes (GET_, POST_, etc.)
+    bytes[60] headers;      // Remainder of first line + headers
+}
+
+// HTTP Response structure
+HTTPResponse {
+    uint32  signature;      // "HTTP"
+    uint32  version;        // "/1.1" or "/1.0"
+    uint32  status_code;    // "200 ", "404 ", etc.
+    bytes[56] headers;      // Status text + headers
+}
+
+// Filter: GET requests
+@filter GET_Requests {
+    method = GET_;
+}
+
+// Filter: POST requests
+@filter POST_Requests {
+    method = POST_;
+}
+
+// Filter: HTTP responses
+@filter HTTP_Responses {
+    signature = HTTP_1_1;
+}
+
+// Filter: 404 errors
+@filter NotFound_Errors {
+    signature = HTTP_1_1;
+}
+
+// Filter: 5xx errors
+@filter Server_Errors {
+    signature = HTTP_1_1;
+}

@@ -1,0 +1,112 @@
+// Memcached Binary Protocol Definition
+// Based on Memcached binary protocol specification
+
+@protocol {
+    name = "Memcached";
+    ports = 11211;
+    endian = big;
+}
+
+@const {
+    // Magic bytes
+    MAGIC_REQUEST  = 0x80;
+    MAGIC_RESPONSE = 0x81;
+
+    // Command opcodes
+    CMD_GET        = 0x00;
+    CMD_SET        = 0x01;
+    CMD_ADD        = 0x02;
+    CMD_REPLACE    = 0x03;
+    CMD_DELETE     = 0x04;
+    CMD_INCREMENT  = 0x05;
+    CMD_DECREMENT  = 0x06;
+    CMD_QUIT       = 0x07;
+    CMD_FLUSH      = 0x08;
+    CMD_GETQ       = 0x09;
+    CMD_NOOP       = 0x0A;
+    CMD_VERSION    = 0x0B;
+
+    // Response status
+    STATUS_SUCCESS = 0x0000;
+    STATUS_NOT_FOUND = 0x0001;
+    STATUS_EXISTS  = 0x0002;
+}
+
+// Memcached Binary Protocol Header
+MemcachedHeader {
+    uint8   magic;          // 0x80 (request) or 0x81 (response)
+    uint8   opcode;         // Command opcode
+    uint16  key_length;     // Length of the key
+    uint8   extras_length;  // Length of extras
+    uint8   data_type;      // Reserved (usually 0)
+    uint16  status;         // Status (response) or vbucket (request)
+    uint32  total_body;     // Total body length
+    uint32  opaque;         // Request/response correlation
+    uint64  cas;            // CAS value
+}
+
+// Memcached Request
+MemcachedRequest {
+    uint8   magic;          // 0x80
+    uint8   opcode;
+    uint16  key_length;
+    uint8   extras_length;
+    uint8   data_type;
+    uint16  vbucket;
+    uint32  total_body;
+    uint32  opaque;
+    uint64  cas;
+}
+
+// Memcached Response
+MemcachedResponse {
+    uint8   magic;          // 0x81
+    uint8   opcode;
+    uint16  key_length;
+    uint8   extras_length;
+    uint8   data_type;
+    uint16  status;
+    uint32  total_body;
+    uint32  opaque;
+    uint64  cas;
+}
+
+// Filter: All requests
+@filter All_Requests {
+    magic = MAGIC_REQUEST;
+}
+
+// Filter: All responses
+@filter All_Responses {
+    magic = MAGIC_RESPONSE;
+}
+
+// Filter: GET commands
+@filter GET_Commands {
+    magic = MAGIC_REQUEST;
+    opcode = CMD_GET;
+}
+
+// Filter: SET commands
+@filter SET_Commands {
+    magic = MAGIC_REQUEST;
+    opcode = CMD_SET;
+}
+
+// Filter: DELETE commands
+@filter DELETE_Commands {
+    magic = MAGIC_REQUEST;
+    opcode = CMD_DELETE;
+}
+
+// Filter: Successful responses
+@filter Success_Responses {
+    magic = MAGIC_RESPONSE;
+    status = STATUS_SUCCESS;
+}
+
+// Filter: Not found responses
+@filter NotFound_Responses {
+    magic = MAGIC_RESPONSE;
+    status = STATUS_NOT_FOUND;
+}

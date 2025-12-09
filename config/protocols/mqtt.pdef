@@ -1,0 +1,69 @@
+// MQTT Protocol Definition (Binary Protocol)
+// Based on MQTT 3.1.1 specification
+
+@protocol {
+    name = "MQTT";
+    ports = 1883, 8883;
+    endian = big;
+}
+
+@const {
+    // MQTT Control Packet Types (high 4 bits of byte 0)
+    CONNECT     = 0x10;   // Client request to connect
+    CONNACK     = 0x20;   // Connect acknowledgment
+    PUBLISH     = 0x30;   // Publish message
+    PUBACK      = 0x40;   // Publish acknowledgment
+    SUBSCRIBE   = 0x82;   // Subscribe request
+    SUBACK      = 0x90;   // Subscribe acknowledgment
+    PINGREQ     = 0xC0;   // Ping request
+    PINGRESP    = 0xD0;   // Ping response
+    DISCONNECT  = 0xE0;   // Client disconnect
+}
+
+// MQTT Fixed Header (all packets start with this)
+MQTTHeader {
+    uint8   packet_type;    // Bits 7-4: packet type, Bits 3-0: flags
+    uint8   remaining_len;  // Remaining length (simplified - only 1 byte)
+}
+
+// MQTT CONNECT packet
+MQTTConnect {
+    uint8   packet_type;
+    uint8   remaining_len;
+    uint16  proto_name_len; // Protocol name length (should be 4 for "MQTT")
+    bytes[4] proto_name;    // "MQTT"
+    uint8   proto_level;    // Protocol level (4 for MQTT 3.1.1)
+}
+
+// MQTT PUBLISH packet
+MQTTPublish {
+    uint8   packet_type;
+    uint8   remaining_len;
+    uint16  topic_len;      // Topic name length
+    bytes[32] topic;        // Topic name (max 32 bytes for this filter)
+}
+
+// Filter: CONNECT packets
+@filter CONNECT_Packets {
+    packet_type & 0xF0 = CONNECT;
+}
+
+// Filter: PUBLISH packets
+@filter PUBLISH_Packets {
+    packet_type & 0xF0 = PUBLISH;
+}
+
+// Filter: SUBSCRIBE packets
+@filter SUBSCRIBE_Packets {
+    packet_type = SUBSCRIBE;
+}
+
+// Filter: PINGREQ packets
+@filter PING_Requests {
+    packet_type = PINGREQ;
+}
+
+// Filter: PINGRESP packets
+@filter PING_Responses {
+    packet_type = PINGRESP;
+}

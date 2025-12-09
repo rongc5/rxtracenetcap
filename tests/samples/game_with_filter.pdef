@@ -1,0 +1,62 @@
+// Game protocol with filter rules
+@protocol {
+    name = "MyGameProtocol";
+    ports = 7777, 7778;
+    endian = big;
+}
+
+@const {
+    MAGIC = 0xDEADBEEF;
+    TYPE_LOGIN = 0x01;
+    TYPE_LOGOUT = 0x02;
+    TYPE_MOVE = 0x03;
+    VERSION = 1;
+}
+
+// Protocol header
+Header {
+    uint32  magic;
+    uint8   version;
+    uint8   packet_type;
+    uint16  flags;
+    uint32  player_id;
+    uint32  sequence;
+}
+
+// Player information
+Player {
+    uint32      player_id;
+    uint16      level;
+    uint8       status;
+    bytes[16]   nickname;
+}
+
+// Complete game packet
+GamePacket {
+    Header      header;
+    Player      player;
+    uint32      room_id;
+    uint32      timestamp;
+}
+
+// Filter rules
+@filter LoginPackets {
+    header.magic = MAGIC;
+    header.version = VERSION;
+    header.packet_type = TYPE_LOGIN;
+}
+
+@filter SpecificPlayer {
+    header.magic = MAGIC;
+    player.player_id = 123456;
+}
+
+@filter HighLevelPlayers {
+    header.magic = MAGIC;
+    player.level >= 50;
+}
+
+@filter RoomRange {
+    room_id >= 1000;
+    room_id <= 2000;
+}

@@ -1,0 +1,61 @@
+// Redis Protocol Definition
+// Based on Redis RESP (REdis Serialization Protocol)
+
+@protocol {
+    name = "Redis";
+    ports = 6379;
+    endian = big;
+}
+
+@const {
+    // RESP data type markers
+    SIMPLE_STRING = 0x2B;  // '+'
+    ERROR         = 0x2D;  // '-'
+    INTEGER       = 0x3A;  // ':'
+    BULK_STRING   = 0x24;  // '$'
+    ARRAY         = 0x2A;  // '*'
+
+    // Common commands (first byte after '*')
+    GET_CMD  = 0x47;  // 'G' (GET)
+    SET_CMD  = 0x53;  // 'S' (SET)
+    DEL_CMD  = 0x44;  // 'D' (DEL)
+    PING_CMD = 0x50;  // 'P' (PING)
+}
+
+// Redis RESP packet
+RESPPacket {
+    uint8   type_marker;    // +, -, :, $, or *
+    bytes[63] data;         // Command/response data
+}
+
+// Redis Command Array (most common format)
+RedisCommand {
+    uint8   array_marker;   // '*'
+    uint8   array_size;     // Number in ASCII
+    bytes[62] command_data; // Command elements
+}
+
+// Filter: Array commands (most Redis commands)
+@filter Array_Commands {
+    array_marker = ARRAY;
+}
+
+// Filter: Simple string responses
+@filter String_Responses {
+    type_marker = SIMPLE_STRING;
+}
+
+// Filter: Error responses
+@filter Error_Responses {
+    type_marker = ERROR;
+}
+
+// Filter: Integer responses
+@filter Integer_Responses {
+    type_marker = INTEGER;
+}
+
+// Filter: Bulk string (used in replies)
+@filter Bulk_Strings {
+    type_marker = BULK_STRING;
+}

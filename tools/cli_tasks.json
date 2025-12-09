@@ -1,0 +1,14 @@
+[
+  {
+    "iface": "lo",
+    "duration_sec": 5,
+    "file": "cli-iface-{ts}.pcap",
+    "category": "cli-test"
+  },
+  {
+    "proc_name": "sshd",
+    "duration_sec": 5,
+    "file": "cli-proc-{ts}.pcap",
+    "category": "cli-test"
+  }
+]

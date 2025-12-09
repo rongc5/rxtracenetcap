@@ -1,0 +1,5 @@
+[
+  {
+    "bpf": "tcp and dst port 22"
+  }
+]

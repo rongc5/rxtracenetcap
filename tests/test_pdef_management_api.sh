@@ -1,0 +1,53 @@
+#!/bin/bash
+BASE_URL="http://localhost:8080"
+
+echo "=========================================="
+echo "Testing PDEF Management API"
+echo "=========================================="
+echo ""
+
+echo "Test 1: List all PDEFs"
+echo "GET ${BASE_URL}/api/pdef/list"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/list" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/list"
+echo ""
+echo ""
+
+echo "Test 2: Get PDEF by name"
+echo "GET ${BASE_URL}/api/pdef/get?name=http.pdef"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/get?name=http.pdef" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get?name=http.pdef"
+echo ""
+echo ""
+
+echo "Test 3: Get PDEF by path"
+echo "GET ${BASE_URL}/api/pdef/get?path=config/protocols/dns.pdef"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/get?path=config/protocols/dns.pdef" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get?path=config/protocols/dns.pdef"
+echo ""
+echo ""
+
+echo "Test 4: Get non-existent PDEF (should return 404)"
+echo "GET ${BASE_URL}/api/pdef/get?name=nonexistent.pdef"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/get?name=nonexistent.pdef" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get?name=nonexistent.pdef"
+echo ""
+echo ""
+
+echo "Test 5: Get without parameters (should return 400)"
+echo "GET ${BASE_URL}/api/pdef/get"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/get" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get"
+echo ""
+echo ""
+
+echo "Test 6: Path traversal attempt (should return 403)"
+echo "GET ${BASE_URL}/api/pdef/get?path=../../etc/passwd"
+echo ""
+curl -s -X GET "${BASE_URL}/api/pdef/get?path=../../etc/passwd" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get?path=../../etc/passwd"
+echo ""
+echo ""
+
+echo "=========================================="
+echo "All tests completed!"
+echo "=========================================="

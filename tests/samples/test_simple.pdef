@@ -1,0 +1,9 @@
+@protocol {
+    name = "Test";
+    endian = big;
+}
+
+Player {
+    uint32      player_id;
+    bytes[16]   nickname;
+}

@@ -1,0 +1,70 @@
+// DNS Protocol Definition
+// Based on RFC 1035
+
+@protocol {
+    name = "DNS";
+    ports = 53;
+    endian = big;
+}
+
+@const {
+    // DNS Query types
+    TYPE_A     = 1;   // IPv4 address
+    TYPE_NS    = 2;   // Name server
+    TYPE_CNAME = 5;   // Canonical name
+    TYPE_SOA   = 6;   // Start of authority
+    TYPE_PTR   = 12;  // Pointer record
+    TYPE_MX    = 15;  // Mail exchange
+    TYPE_TXT   = 16;  // Text record
+    TYPE_AAAA  = 28;  // IPv6 address
+
+    // DNS Classes
+    CLASS_IN   = 1;   // Internet
+
+    // Flags
+    QR_QUERY    = 0x0000;  // Query
+    QR_RESPONSE = 0x8000;  // Response
+}
+
+// DNS Header
+DNSHeader {
+    uint16  transaction_id;
+    uint16  flags;
+    uint16  questions;
+    uint16  answer_rrs;
+    uint16  authority_rrs;
+    uint16  additional_rrs;
+}
+
+// DNS Query Packet (header + question)
+DNSQuery {
+    uint16  transaction_id;
+    uint16  flags;
+    uint16  questions;
+    uint16  answer_rrs;
+    uint16  authority_rrs;
+    uint16  additional_rrs;
+    bytes[64] question;  // Domain name + type + class
+}
+
+// Filter: DNS Queries (QR bit = 0)
+@filter DNS_Queries {
+    flags & 0x8000 = 0x0000;
+}
+
+// Filter: DNS Responses (QR bit = 1)
+@filter DNS_Responses {
+    flags & 0x8000 = 0x8000;
+}
+
+// Filter: Queries with 1 question
+@filter Single_Question {
+    questions = 1;
+    flags & 0x8000 = 0x0000;
+}
+
+// Filter: Responses with answers
+@filter Responses_With_Answers {
+    flags & 0x8000 = 0x8000;
+    answer_rrs >= 1;
+}
