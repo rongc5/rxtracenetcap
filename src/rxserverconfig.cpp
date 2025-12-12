@@ -1,8 +1,12 @@
 #include "rxserverconfig.h"
 #include "legacy_core.h"
+#include "rapidjson/document.h"
+#include "rapidjson/filereadstream.h"
 
 #include <string.h>
 #include <stdio.h>
+#include <fstream>
+#include <sstream>
 
 CRxServerConfig::CRxServerConfig()
 {
@@ -24,7 +28,7 @@ void CRxServerConfig::init_defaults()
     port_ = 8080;
     workers_ = 2;
     capture_threads_ = 4;
-    strategy_path_.clear();
+    strategy_path_ = "config/strategy.json";
     loaded_path_.clear();
     log_config = LogConfig();
     cleanup_config = CleanupConfig();
@@ -43,40 +47,142 @@ std::string CRxServerConfig::deduce_path_from_argv(const char* argv0)
     if (base_name.empty()) {
         base_name = "rxtracenetcap";
     }
-    std::string path = std::string("config/") + base_name + ".ini";
+    std::string path = std::string("config/") + base_name + ".json";
     return path;
 }
 
 bool CRxServerConfig::load_from_path(const std::string& path)
 {
-    CRxIniConfig ini;
-    if (!ini.load(path)) {
+
+    std::ifstream ifs(path.c_str());
+    if (!ifs.is_open()) {
         return false;
     }
-    bind_addr_ = ini.value("server", "bind_addr", bind_addr_);
-    port_ = ini.intValue("server", "port", port_);
-    workers_ = ini.intValue("server", "workers", workers_);
-    capture_threads_ = ini.intValue("server", "capture_threads", capture_threads_);
-    strategy_path_ = ini.value("server", "strategy_path", strategy_path_);
-    log_config.path = ini.value("logging", "log_path", log_config.path);
-    log_config.prefix = ini.value("logging", "log_prefix", log_config.prefix);
-    log_config.size_mb = ini.intValue("logging", "log_size_mb", log_config.size_mb);
-    log_config.level = ini.intValue("logging", "log_level", log_config.level);
-    cleanup_config.record_dir = ini.value("cleanup", "record_dir", cleanup_config.record_dir);
-    cleanup_config.record_max_size_mb = ini.intValue("cleanup", "record_max_size_mb", cleanup_config.record_max_size_mb);
-    cleanup_config.record_max_files = ini.intValue("cleanup", "record_max_files", cleanup_config.record_max_files);
-    cleanup_config.compress_interval_sec = ini.intValue("cleanup", "compress_interval_sec", cleanup_config.compress_interval_sec);
-    cleanup_config.compress_threshold_mb = ini.intValue("cleanup", "compress_threshold_mb", static_cast<int>(cleanup_config.compress_threshold_mb));
-    cleanup_config.archive_dir = ini.value("cleanup", "archive_dir", cleanup_config.archive_dir);
-    cleanup_config.archive_format = ini.value("cleanup", "archive_format", cleanup_config.archive_format);
-    cleanup_config.archive_keep_days = ini.intValue("cleanup", "archive_keep_days", cleanup_config.archive_keep_days);
-    cleanup_config.archive_max_total_size_mb = static_cast<unsigned long>(
-        ini.intValue("cleanup",
-                     "archive_max_total_size_mb",
-                     static_cast<int>(cleanup_config.archive_max_total_size_mb)));
-    cleanup_config.archive_remove_source = ini.boolValue("cleanup", "archive_remove_source", cleanup_config.archive_remove_source);
-    cleanup_config.pdef_dir = ini.value("cleanup", "pdef_dir", cleanup_config.pdef_dir);
-    cleanup_config.pdef_ttl_hours = ini.intValue("cleanup", "pdef_ttl_hours", cleanup_config.pdef_ttl_hours);
+
+    std::stringstream buffer;
+    buffer << ifs.rdbuf();
+    std::string content = buffer.str();
+    ifs.close();
+
+
+    rapidjson::Document doc;
+    doc.Parse(content.c_str());
+
+    if (doc.HasParseError()) {
+        return false;
+    }
+
+    if (!doc.IsObject()) {
+        return false;
+    }
+
+
+    if (doc.HasMember("server") && doc["server"].IsObject()) {
+        const rapidjson::Value& server = doc["server"];
+        if (server.HasMember("bind_addr") && server["bind_addr"].IsString()) {
+            bind_addr_ = server["bind_addr"].GetString();
+        }
+        if (server.HasMember("port") && server["port"].IsInt()) {
+            port_ = server["port"].GetInt();
+        }
+        if (server.HasMember("workers") && server["workers"].IsInt()) {
+            workers_ = server["workers"].GetInt();
+        }
+        if (server.HasMember("capture_threads") && server["capture_threads"].IsInt()) {
+            capture_threads_ = server["capture_threads"].GetInt();
+        }
+    }
+
+
+    if (doc.HasMember("logging") && doc["logging"].IsObject()) {
+        const rapidjson::Value& logging = doc["logging"];
+        if (logging.HasMember("log_path") && logging["log_path"].IsString()) {
+            log_config.path = logging["log_path"].GetString();
+        }
+        if (logging.HasMember("log_prefix") && logging["log_prefix"].IsString()) {
+            log_config.prefix = logging["log_prefix"].GetString();
+        }
+        if (logging.HasMember("log_size_mb") && logging["log_size_mb"].IsInt()) {
+            log_config.size_mb = logging["log_size_mb"].GetInt();
+        }
+        if (logging.HasMember("log_level") && logging["log_level"].IsInt()) {
+            log_config.level = logging["log_level"].GetInt();
+        }
+    }
+
+
+    if (doc.HasMember("capture") && doc["capture"].IsObject()) {
+        const rapidjson::Value& capture = doc["capture"];
+        if (capture.HasMember("default_interface") && capture["default_interface"].IsString()) {
+            capture_config.default_interface = capture["default_interface"].GetString();
+        }
+        if (capture.HasMember("default_duration") && capture["default_duration"].IsInt()) {
+            capture_config.default_duration = capture["default_duration"].GetInt();
+        }
+        if (capture.HasMember("default_category") && capture["default_category"].IsString()) {
+            capture_config.default_category = capture["default_category"].GetString();
+        }
+        if (capture.HasMember("file_pattern") && capture["file_pattern"].IsString()) {
+            capture_config.file_pattern = capture["file_pattern"].GetString();
+        }
+        if (capture.HasMember("max_file_size_mb") && capture["max_file_size_mb"].IsInt()) {
+            capture_config.max_file_size_mb = capture["max_file_size_mb"].GetInt();
+        }
+    }
+
+
+    if (doc.HasMember("storage") && doc["storage"].IsObject()) {
+        const rapidjson::Value& storage = doc["storage"];
+        if (storage.HasMember("base_dir") && storage["base_dir"].IsString()) {
+            storage_config.base_dir = storage["base_dir"].GetString();
+        }
+        if (storage.HasMember("max_age_days") && storage["max_age_days"].IsInt()) {
+            storage_config.max_age_days = storage["max_age_days"].GetInt();
+        }
+        if (storage.HasMember("max_size_gb") && storage["max_size_gb"].IsInt()) {
+            storage_config.max_size_gb = storage["max_size_gb"].GetInt();
+        }
+        if (storage.HasMember("temp_pdef_dir") && storage["temp_pdef_dir"].IsString()) {
+            storage_config.temp_pdef_dir = storage["temp_pdef_dir"].GetString();
+        }
+        if (storage.HasMember("temp_pdef_ttl_hours") && storage["temp_pdef_ttl_hours"].IsInt()) {
+            storage_config.temp_pdef_ttl_hours = storage["temp_pdef_ttl_hours"].GetInt();
+        }
+    }
+
+
+    if (doc.HasMember("cleanup") && doc["cleanup"].IsObject()) {
+        const rapidjson::Value& cleanup = doc["cleanup"];
+        if (cleanup.HasMember("compress_interval_sec") && cleanup["compress_interval_sec"].IsInt()) {
+            cleanup_config.compress_interval_sec = cleanup["compress_interval_sec"].GetInt();
+        }
+        if (cleanup.HasMember("batch_compress_file_count") && cleanup["batch_compress_file_count"].IsInt()) {
+            cleanup_config.batch_compress_file_count = cleanup["batch_compress_file_count"].GetInt();
+        }
+        if (cleanup.HasMember("batch_compress_size_mb") && cleanup["batch_compress_size_mb"].IsInt()) {
+            cleanup_config.batch_compress_size_mb = cleanup["batch_compress_size_mb"].GetInt();
+        }
+        if (cleanup.HasMember("archive_dir") && cleanup["archive_dir"].IsString()) {
+            cleanup_config.archive_dir = cleanup["archive_dir"].GetString();
+        }
+        if (cleanup.HasMember("archive_keep_days") && cleanup["archive_keep_days"].IsInt()) {
+            cleanup_config.archive_keep_days = cleanup["archive_keep_days"].GetInt();
+        }
+        if (cleanup.HasMember("archive_max_total_size_mb") && cleanup["archive_max_total_size_mb"].IsInt()) {
+            cleanup_config.archive_max_total_size_mb = cleanup["archive_max_total_size_mb"].GetInt();
+        }
+        if (cleanup.HasMember("archive_remove_source") && cleanup["archive_remove_source"].IsBool()) {
+            cleanup_config.archive_remove_source = cleanup["archive_remove_source"].GetBool();
+        }
+    }
+
+
+    if (doc.HasMember("limits") && doc["limits"].IsObject()) {
+        const rapidjson::Value& limits = doc["limits"];
+        if (limits.HasMember("max_concurrent_captures") && limits["max_concurrent_captures"].IsInt()) {
+            limits_config.max_concurrent_captures = limits["max_concurrent_captures"].GetInt();
+        }
+    }
 
     loaded_path_ = path;
     update_log_path();
@@ -89,7 +195,7 @@ bool CRxServerConfig::load_from_process(const char* argv0)
     if (load_from_path(path)) {
         return true;
     }
-    return load_from_path("../config/strategy.ini");
+    return load_from_path("config/rxtracenetcap.json");
 }
 
 void CRxServerConfig::update_log_path()

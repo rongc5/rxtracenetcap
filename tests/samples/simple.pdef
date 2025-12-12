@@ -3,7 +3,6 @@
 
 @protocol {
     name = "SimpleProtocol";
-    ports = 8080, 8081;
     endian = big;
 }
 

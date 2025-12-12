@@ -5,7 +5,7 @@
 #include <time.h>
 #include <pcap/pcap.h>
 
-// Include PDEF types
+
 #include "pdef/pdef_types.h"
 
 struct CRxDumpCtx {
@@ -23,15 +23,14 @@ struct CRxDumpCtx {
     int port;
     std::string current_path;
     bool compress_enabled;
-    std::string compress_cmd;
 
-    // PDEF protocol filter
-    std::string protocol_filter_path;  // Path to .pdef file
-    ProtocolDef* protocol_def;         // Loaded protocol definition
-    unsigned long packets_filtered;    // Count of packets filtered out
 
-    // Filter thread integration
-    uint32_t filter_thread_index;      // Index of filter thread (0 = not using filter thread)
+    std::string protocol_filter_path;
+    ProtocolDef* protocol_def;
+    unsigned long packets_filtered;
+
+
+    uint32_t filter_thread_index;
 };
 
 class CRxStorageUtils {

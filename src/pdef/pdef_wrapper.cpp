@@ -84,4 +84,4 @@ void ProtocolFilter::reset() {
     error_.clear();
 }
 
-}  // namespace pdef
+}

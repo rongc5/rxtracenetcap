@@ -335,7 +335,7 @@ static int infer_port_from_filter(const std::string& filter)
                 if (found_port == 0) {
                     found_port = port;
                 } else if (port != found_port) {
-                    /* Multiple distinct ports present; do not collapse to one */
+
                     return 0;
                 }
             }
@@ -433,6 +433,7 @@ SRxCaptureTask::SRxCaptureTask()
 
 CRxCaptureManagerThread::CRxCaptureManagerThread()
     : _is_first(false)
+    , _next_filter_thread_idx(0)
 {
 }
 
@@ -448,10 +449,22 @@ CRxCaptureManagerThread::~CRxCaptureManagerThread()
         }
     }
     _capture_threads.clear();
+
+
+    for (size_t i = 0; i < _filter_threads.size(); ++i)
+    {
+        if (_filter_threads[i])
+        {
+            delete _filter_threads[i];
+            _filter_threads[i] = NULL;
+        }
+    }
+    _filter_threads.clear();
 }
 
 bool CRxCaptureManagerThread::start()
 {
+    LOG_NOTICE("CRxCaptureManagerThread::start() called");
 
     if (!base_net_thread::start())
     {
@@ -459,7 +472,7 @@ bool CRxCaptureManagerThread::start()
         return false;
     }
 
-    LOG_NOTICE("CRxCaptureManagerThread started");
+    LOG_NOTICE("CRxCaptureManagerThread base_net_thread started");
 
     CRxProcData* p_data = CRxProcData::instance();
     CRxServerConfig* cfg = p_data ? p_data->server_config() : NULL;
@@ -507,6 +520,36 @@ bool CRxCaptureManagerThread::start()
     LOG_NOTICE("CRxCaptureManagerThread: created %zu capture worker threads",
                _capture_threads.size());
 
+
+
+    int filter_thread_count = 1;
+
+    LOG_NOTICE("CRxCaptureManagerThread: creating %d FilterThread for offline PDEF filtering",
+               filter_thread_count);
+
+    for (int i = 0; i < filter_thread_count; ++i) {
+        CRxFilterThread* filter_thread = new (std::nothrow) CRxFilterThread();
+        if (!filter_thread) {
+            LOG_ERROR("CRxCaptureManagerThread: failed to allocate FilterThread %d", i);
+            continue;
+        }
+
+
+        if (!filter_thread->start()) {
+            LOG_ERROR("CRxCaptureManagerThread: failed to start FilterThread %d", i);
+            delete filter_thread;
+            continue;
+        }
+
+        _filter_threads.push_back(filter_thread);
+
+        LOG_NOTICE("CRxCaptureManagerThread: created FilterThread %d, thread_index=%u",
+                   i, filter_thread->get_thread_index());
+    }
+
+    LOG_NOTICE("CRxCaptureManagerThread: created %zu FilterThread(s)",
+               _filter_threads.size());
+
     return true;
 }
 
@@ -526,7 +569,6 @@ void CRxCaptureManagerThread::run_process()
 
         start_queue_timer();
         start_clean_timer();
-        start_compress_timer();
     }
 
     CRxProcData* global_data = CRxProcData::instance();
@@ -570,15 +612,21 @@ void CRxCaptureManagerThread::handle_msg(shared_ptr<normal_msg>& msg)
         case RX_MSG_CAPTURE_FAILED:
             handle_capture_failed_v2(msg);
             break;
+        case RX_MSG_CAPTURE_RAW_FILE:
+            handle_capture_raw_file_v2(msg);
+            break;
+        case RX_MSG_CAPTURE_FILTERED_FILE:
+            handle_capture_filtered_file_v2(msg);
+            break;
+        case RX_MSG_PDEF_ENDIAN_DETECTED:
+            handle_pdef_endian_detected(msg);
+            break;
         case RX_MSG_SAMPLE_TRIGGER:
         case RX_MSG_SAMPLE_ALERT:
             handle_sample_alert(msg);
             break;
         case RX_MSG_CLEAN_EXPIRED:
             handle_clean_expired(msg);
-            break;
-        case RX_MSG_COMPRESS_FILES:
-            handle_compress_files(msg);
             break;
         case RX_MSG_CHECK_THRESHOLD:
             handle_check_threshold(msg);
@@ -980,10 +1028,6 @@ void CRxCaptureManagerThread::handle_timeout(shared_ptr<timer_msg>& t_msg)
             clean_expired_files();
             start_clean_timer();
             break;
-        case TIMER_TYPE_BATCH_COMPRESS:
-            batch_compress_files();
-            start_compress_timer();
-            break;
         default:
             LOG_DEBUG("Unknown timer type: %d", t_msg->_timer_type);
             break;
@@ -1114,8 +1158,8 @@ int CRxCaptureManagerThread::get_max_concurrent_limit()
 {
     CRxProcData* global_data = CRxProcData::instance();
     int max_concurrent = 0;
-    if (global_data && global_data->_strategy_dict) {
-        max_concurrent = global_data->_strategy_dict->current()->limits().max_concurrent_captures;
+    if (global_data && global_data->server_config()) {
+        max_concurrent = global_data->server_config()->limits().max_concurrent_captures;
     }
     if (max_concurrent <= 0) {
         max_concurrent = RxCaptureConstants::kMinConcurrentCaptures;
@@ -1357,8 +1401,8 @@ void CRxCaptureManagerThread::handle_start_capture(shared_ptr<normal_msg>& msg)
                 bpf << "port " << *it;
             }
             start_msg->filter = bpf.str();
-            /* Only set a single port_filter when there is exactly one port;
-             * otherwise leave it 0 to indicate "multiple ports" while BPF handles all. */
+
+
             if (start_msg->port_filter == 0 && ports.size() == 1) {
                 start_msg->port_filter = *ports.begin();
             }
@@ -1407,6 +1451,9 @@ void CRxCaptureManagerThread::handle_start_capture(shared_ptr<normal_msg>& msg)
         config_snapshot.max_duration_sec = effective_duration;
     }
 
+    fprintf(stderr, "[DEBUG MGR] handle_start_capture: start_msg->protocol_filter='%s', start_msg->protocol_filter_inline='%s'\n",
+            start_msg->protocol_filter.c_str(), start_msg->protocol_filter_inline.c_str());
+
     CaptureSpec capture_spec;
     capture_spec.capture_mode = static_cast<ECaptureMode>(start_msg->capture_mode);
     capture_spec.iface = start_msg->iface;
@@ -1418,6 +1465,7 @@ void CRxCaptureManagerThread::handle_start_capture(shared_ptr<normal_msg>& msg)
     capture_spec.category = start_msg->category;
     capture_spec.filter = start_msg->filter;
     capture_spec.protocol_filter = start_msg->protocol_filter;
+    capture_spec.protocol_filter_inline = start_msg->protocol_filter_inline;
     capture_spec.ip_filter = start_msg->ip_filter;
     capture_spec.port_filter = start_msg->port_filter;
     capture_spec.output_pattern = start_msg->file_pattern;
@@ -1532,85 +1580,13 @@ void CRxCaptureManagerThread::handle_stop_capture(shared_ptr<normal_msg>& msg)
     reply->conn_id = stop_msg->reply_target._id;
     reply->headers["Content-Type"] = "application/json";
 
-    CRxProcData* global_data = CRxProcData::instance();
-    if (!global_data) {
-        reply->status = 500;
-        reply->reason = "Error";
-        reply->body = "{\"error\":\"internal error\"}";
-        send_reply_to_http(stop_msg->reply_target, reply);
-        return;
-    }
 
-    CRxSafeTaskMgr& task_mgr = global_data->capture_task_mgr();
-    TaskSnapshot snapshot;
-    if (!task_mgr.query_task(stop_msg->capture_id, snapshot)) {
-        reply->status = 404;
-        reply->reason = "Not Found";
-        char buf[256];
-        snprintf(buf, sizeof(buf),
-                      "{\"error\":\"capture_not_found\",\"capture_id\":%d}",
-                      stop_msg->capture_id);
-        reply->body = buf;
-        send_reply_to_http(stop_msg->reply_target, reply);
-        return;
-    }
+    reply->status = 501;
+    reply->reason = "Not Implemented";
+    reply->body = "{\"error\":\"stop not supported\",\"message\":\"capture tasks cannot be stopped once started\"}";
 
-    const char* status_str = capture_status_to_string(snapshot.status);
-    std::string snapshot_key = json_escape(snapshot.key);
-    std::string snapshot_sid = json_escape(snapshot.sid);
-
-    if (snapshot.status == STATUS_COMPLETED ||
-        snapshot.status == STATUS_FAILED ||
-        snapshot.status == STATUS_STOPPED) {
-        reply->status = 200;
-        reply->reason = "OK";
-        std::ostringstream oss;
-        oss << "{\"capture_id\":" << snapshot.capture_id
-            << ",\"key\":\"" << snapshot_key << "\""
-            << ",\"sid\":\"" << snapshot_sid << "\""
-            << ",\"status\":\"" << status_str << "\"}";
-        reply->body = oss.str();
-        send_reply_to_http(stop_msg->reply_target, reply);
-        return;
-    }
-
-    MarkStopFunctor mark_stop(true);
-    task_mgr.update_task(stop_msg->capture_id, mark_stop);
-
-    bool dispatched = false;
-    if (snapshot.worker_thread_index > 0) {
-        ObjId target;
-        target._id = OBJ_ID_THREAD;
-        target._thread_index = snapshot.worker_thread_index;
-
-        shared_ptr<SRxCaptureStopMsgV2> stop_v2(new SRxCaptureStopMsgV2());
-        stop_v2->capture_id = snapshot.capture_id;
-        stop_v2->key = snapshot.key;
-        stop_v2->sid = snapshot.sid;
-        stop_v2->op_version = 1;
-        stop_v2->config_hash = 0;
-        stop_v2->sender_thread_index = static_cast<int>(get_thread_index());
-        stop_v2->stop_reason = "user_stop";
-
-        shared_ptr<normal_msg> base = static_pointer_cast<normal_msg>(stop_v2);
-        base_net_thread::put_obj_msg(target, base);
-        dispatched = true;
-    } else {
-        task_mgr.update_status(stop_msg->capture_id, STATUS_STOPPED);
-    }
-
-    reply->status = 200;
-    reply->reason = "OK";
-    std::ostringstream oss;
-    oss << "{\"capture_id\":" << snapshot.capture_id
-        << ",\"key\":\"" << snapshot_key << "\""
-        << ",\"sid\":\"" << snapshot_sid << "\""
-        << ",\"status\":\"" << (dispatched ? "stopping" : "stopped") << "\""
-        << ",\"dispatched\":" << (dispatched ? "true" : "false") << "}";
-    reply->body = oss.str();
-
-    LOG_NOTICE("Stop requested for capture %d (worker=%u, dispatched=%d)",
-               snapshot.capture_id, snapshot.worker_thread_index ? snapshot.worker_thread_index : 0, dispatched ? 1 : 0);
+    LOG_NOTICE("Stop capture request rejected: feature not supported (capture_id=%d)",
+               stop_msg->capture_id);
 
     send_reply_to_http(stop_msg->reply_target, reply);
 }
@@ -1684,8 +1660,39 @@ void CRxCaptureManagerThread::handle_query_capture(shared_ptr<normal_msg>& msg)
         << ",\"end_time\":" << snapshot.end_time
         << ",\"packets\":" << snapshot.packet_count
         << ",\"bytes\":" << snapshot.bytes_captured
-        << ",\"worker\":" << snapshot.worker_thread_index
-        << ",\"stop_requested\":" << (snapshot.stop_requested ? "true" : "false")
+        << ",\"worker\":" << snapshot.worker_thread_index;
+
+
+    if (snapshot.status == STATUS_RUNNING || snapshot.status == STATUS_RESOLVING) {
+
+        int duration_sec = snapshot.duration_sec;
+        if (duration_sec > 0 && snapshot.start_time > 0) {
+            time_t now = time(NULL);
+            long elapsed_sec = now - snapshot.start_time;
+            if (elapsed_sec < 0) {
+                elapsed_sec = 0;
+            }
+
+
+            int progress_pct = (elapsed_sec * 100) / duration_sec;
+            if (progress_pct > 100) {
+                progress_pct = 100;
+            }
+
+
+            long remaining_sec = duration_sec - elapsed_sec;
+            if (remaining_sec < 0) {
+                remaining_sec = 0;
+            }
+
+            oss << ",\"estimated_progress_pct\":" << progress_pct
+                << ",\"duration_sec\":" << duration_sec
+                << ",\"elapsed_sec\":" << elapsed_sec
+                << ",\"remaining_sec\":" << remaining_sec;
+        }
+    }
+
+    oss << ",\"stop_requested\":" << (snapshot.stop_requested ? "true" : "false")
         << ",\"client_ip\":\"" << json_escape(snapshot.client_ip) << "\""
         << ",\"request_user\":\"" << json_escape(snapshot.request_user) << "\"";
 
@@ -2054,6 +2061,115 @@ void CRxCaptureManagerThread::handle_capture_failed_v2(shared_ptr<normal_msg>& m
     clear_module_cooldown_for_capture(failed->capture_id);
 }
 
+void CRxCaptureManagerThread::handle_capture_raw_file_v2(shared_ptr<normal_msg>& msg)
+{
+    fprintf(stderr, "[DEBUG MGR RAW] handle_capture_raw_file_v2 called\n");
+
+    shared_ptr<SRxCaptureRawFileMsgV2> raw =
+        dynamic_pointer_cast<SRxCaptureRawFileMsgV2>(msg);
+    if (!raw) {
+        LOG_WARNING("handle_capture_raw_file_v2: invalid message type");
+        fprintf(stderr, "[DEBUG MGR RAW] ERROR: invalid message type\n");
+        return;
+    }
+
+    fprintf(stderr, "[DEBUG MGR RAW] Task %d: raw_pcap_path='%s', pdef_file_path='%s'\n",
+            raw->capture_id, raw->raw_pcap_path.c_str(), raw->pdef_file_path.c_str());
+
+    LOG_NOTICE("Task %d: raw file ready, sending to FilterThread for PDEF filtering: %s",
+               raw->capture_id, raw->raw_pcap_path.c_str());
+
+
+    if (!raw->pdef_file_path.empty()) {
+        track_pdef_usage_start(raw->capture_id, raw->pdef_file_path);
+    }
+
+
+    fprintf(stderr, "[DEBUG MGR RAW] Checking FilterThreads: _filter_threads.size()=%zu\n", _filter_threads.size());
+
+    if (_filter_threads.empty()) {
+        LOG_ERROR("No FilterThread available for PDEF filtering");
+        fprintf(stderr, "[DEBUG MGR RAW] ERROR: No FilterThread available!\n");
+
+        if (!raw->pdef_file_path.empty()) {
+            track_pdef_usage_end(raw->capture_id, raw->pdef_file_path);
+        }
+        return;
+    }
+
+    static size_t next_filter = 0;
+    size_t filter_index = next_filter % _filter_threads.size();
+    next_filter++;
+
+    CRxFilterThread* filter_thread = _filter_threads[filter_index];
+    if (!filter_thread) {
+        LOG_ERROR("FilterThread %zu is NULL", filter_index);
+        return;
+    }
+
+
+    raw->manager_thread_index = static_cast<int>(get_thread_index());
+
+
+    ObjId target;
+    target._id = OBJ_ID_THREAD;
+    target._thread_index = filter_thread->get_thread_index();
+
+    shared_ptr<normal_msg> base_msg = static_pointer_cast<normal_msg>(raw);
+    base_net_thread::put_obj_msg(target, base_msg);
+
+    LOG_DEBUG("Dispatched raw file to FilterThread %u (manager_thread_index=%d)",
+              target._thread_index, raw->manager_thread_index);
+}
+
+void CRxCaptureManagerThread::handle_capture_filtered_file_v2(shared_ptr<normal_msg>& msg)
+{
+    shared_ptr<SRxCaptureFilteredFileMsgV2> filtered =
+        dynamic_pointer_cast<SRxCaptureFilteredFileMsgV2>(msg);
+    if (!filtered) {
+        LOG_WARNING("handle_capture_filtered_file_v2: invalid message type");
+        return;
+    }
+
+    CRxProcData* global_data = CRxProcData::instance();
+    if (!global_data) {
+        return;
+    }
+
+    CRxSafeTaskMgr& task_mgr = global_data->capture_task_mgr();
+
+
+    CaptureFileInfo file_info;
+    file_info.file_path = filtered->filtered_pcap_path;
+    file_info.file_size = filtered->file_size;
+    file_info.file_ready_ts = rx_capture_now_usec();
+
+    std::vector<CaptureFileInfo> files;
+    files.push_back(file_info);
+    task_mgr.append_capture_files(filtered->capture_id, files);
+
+
+    task_mgr.set_capture_finished(filtered->capture_id,
+                                  rx_capture_now_usec(),
+                                  filtered->total_packets,
+                                  filtered->file_size,
+                                  filtered->filtered_pcap_path);
+
+    LOG_NOTICE("Task %d: PDEF filtered file ready: %s (%lu/%lu packets kept)",
+               filtered->capture_id,
+               filtered->filtered_pcap_path.c_str(),
+               filtered->filtered_packets,
+               filtered->total_packets);
+
+    clear_module_cooldown_for_capture(filtered->capture_id);
+
+
+    if (!filtered->pdef_file_path.empty()) {
+        track_pdef_usage_end(filtered->capture_id, filtered->pdef_file_path);
+        try_writeback_pdef_endian(filtered->pdef_file_path);
+    }
+}
+
 void CRxCaptureManagerThread::handle_clean_compress_done(shared_ptr<normal_msg>& msg)
 {
     shared_ptr<SRxCleanCompressDoneMsgV2> done =
@@ -2101,13 +2217,6 @@ void CRxCaptureManagerThread::handle_clean_expired(shared_ptr<normal_msg>& msg)
     clean_expired_files();
 }
 
-void CRxCaptureManagerThread::handle_compress_files(shared_ptr<normal_msg>& msg)
-{
-    (void)msg;
-    LOG_DEBUG("handle_compress_files from message");
-    batch_compress_files();
-}
-
 void CRxCaptureManagerThread::handle_check_threshold(shared_ptr<normal_msg>& msg)
 {
     (void)msg;
@@ -2117,17 +2226,13 @@ void CRxCaptureManagerThread::handle_check_threshold(shared_ptr<normal_msg>& msg
 
 void CRxCaptureManagerThread::start_queue_timer()
 {
-    CRxProcData* p_data = CRxProcData::instance();
-    if (p_data && p_data->_strategy_dict)
-    {
-        shared_ptr<timer_msg> t_msg(new timer_msg);
-        t_msg->_timer_type = TIMER_TYPE_QUEUE_CHECK;
-        t_msg->_time_length = p_data->_strategy_dict->current()->queue_timer_interval_ms();
-        t_msg->_obj_id = OBJ_ID_THREAD;
-        add_timer(t_msg);
+    shared_ptr<timer_msg> t_msg(new timer_msg);
+    t_msg->_timer_type = TIMER_TYPE_QUEUE_CHECK;
+    t_msg->_time_length = QUEUE_TIMER_INTERVAL_MS;
+    t_msg->_obj_id = OBJ_ID_THREAD;
+    add_timer(t_msg);
 
-        LOG_DEBUG("Queue timer started with interval: %d ms", t_msg->_time_length);
-    }
+    LOG_DEBUG("Queue timer started with interval: %d ms", QUEUE_TIMER_INTERVAL_MS);
 }
 
 void CRxCaptureManagerThread::start_clean_timer()
@@ -2142,22 +2247,6 @@ void CRxCaptureManagerThread::start_clean_timer()
         add_timer(t_msg);
 
         LOG_DEBUG("Clean timer started with interval: 1 hour");
-    }
-}
-
-void CRxCaptureManagerThread::start_compress_timer()
-{
-    CRxProcData* p_data = CRxProcData::instance();
-    if (p_data && p_data->_strategy_dict)
-    {
-        shared_ptr<timer_msg> t_msg(new timer_msg);
-        t_msg->_timer_type = TIMER_TYPE_BATCH_COMPRESS;
-        t_msg->_time_length = p_data->_strategy_dict->current()->batch_compress_interval_sec() * 1000;
-        t_msg->_obj_id = OBJ_ID_THREAD;
-        add_timer(t_msg);
-
-        LOG_DEBUG("Compress timer started with interval: %d sec",
-                  p_data->_strategy_dict->current()->batch_compress_interval_sec());
     }
 }
 
@@ -2178,10 +2267,10 @@ void CRxCaptureManagerThread::check_queue()
     LOG_DEBUG("check_queue: running=%zu, pending=%zu",
               running_size, pending_size);
 
-    if (!p_data->_strategy_dict)
+    if (!p_data->server_config())
         return;
 
-    int max_concurrent = p_data->_strategy_dict->current()->limits().max_concurrent_captures;
+    int max_concurrent = p_data->server_config()->limits().max_concurrent_captures;
     LOG_DEBUG("max_concurrent_captures: %d", max_concurrent);
 
     if ((int)running_size < max_concurrent && pending_size > 0)
@@ -2202,25 +2291,6 @@ void CRxCaptureManagerThread::clean_expired_files()
     const SRxStorage& storage = p_data->_strategy_dict->current()->storage();
     LOG_DEBUG("Cleaning files older than %d days from %s",
               storage.max_age_days, storage.base_dir.c_str());
-
-}
-
-void CRxCaptureManagerThread::batch_compress_files()
-{
-    LOG_DEBUG("batch_compress_files");
-
-    CRxProcData* p_data = CRxProcData::instance();
-    if (!p_data || !p_data->_strategy_dict)
-        return;
-
-    const SRxStorage& storage = p_data->_strategy_dict->current()->storage();
-    if (!storage.compress_enabled)
-    {
-        LOG_DEBUG("Compression is disabled in config");
-        return;
-    }
-
-    LOG_DEBUG("Compressing pcap files with command: %s", storage.compress_cmd.c_str());
 
 }
 
@@ -2274,4 +2344,228 @@ bool CRxCaptureManagerThread::UpdateTaskStatus(int capture_id, ECaptureTaskStatu
     CRxSafeTaskMgr& task_mgr = p_data->capture_task_mgr();
 
     return task_mgr.update_status(capture_id, new_status);
+}
+
+
+
+void CRxCaptureManagerThread::handle_pdef_endian_detected(shared_ptr<normal_msg>& msg)
+{
+    shared_ptr<SRxPdefEndianMsg> endian_msg = dynamic_pointer_cast<SRxPdefEndianMsg>(msg);
+
+    if (!endian_msg) {
+        LOG_WARNING("handle_pdef_endian_detected: invalid message type");
+        return;
+    }
+
+    std::string pdef_path = endian_msg->pdef_file_path;
+    int detected_endian = endian_msg->detected_endian;
+    int capture_id = endian_msg->capture_id;
+
+    if (pdef_path.empty()) {
+        LOG_WARNING("handle_pdef_endian_detected: empty PDEF path");
+        return;
+    }
+
+    LOG_NOTICE("Manager: received endian detection for %s, endian=%s (from capture_id=%d)",
+               pdef_path.c_str(),
+               detected_endian == ENDIAN_TYPE_BIG ? "big" : "little",
+               capture_id);
+
+
+    PDEFUsageInfo& info = _pdef_usage_map[pdef_path];
+
+    if (info.writeback_done) {
+        LOG_DEBUG("Manager: %s already written back, skip", pdef_path.c_str());
+        return;
+    }
+
+
+    if (info.detected_endian == 0 || info.detected_endian == ENDIAN_TYPE_UNKNOWN) {
+        info.detected_endian = detected_endian;
+        info.writeback_needed = true;
+    } else if (info.detected_endian != detected_endian) {
+        LOG_WARNING("Manager: conflicting endian detection for %s (was %d, now %d)",
+                    pdef_path.c_str(), info.detected_endian, detected_endian);
+
+    }
+
+
+    try_writeback_pdef_endian(pdef_path);
+}
+
+void CRxCaptureManagerThread::track_pdef_usage_start(int capture_id, const std::string& pdef_path)
+{
+    if (pdef_path.empty()) {
+        return;
+    }
+
+    PDEFUsageInfo& info = _pdef_usage_map[pdef_path];
+    info.active_capture_ids.insert(capture_id);
+
+    LOG_DEBUG("Manager: task %d started using %s (active=%zu)",
+              capture_id, pdef_path.c_str(), info.active_capture_ids.size());
+}
+
+void CRxCaptureManagerThread::track_pdef_usage_end(int capture_id, const std::string& pdef_path)
+{
+    if (pdef_path.empty()) {
+        return;
+    }
+
+    std::map<std::string, PDEFUsageInfo>::iterator it = _pdef_usage_map.find(pdef_path);
+    if (it == _pdef_usage_map.end()) {
+        return;
+    }
+
+    PDEFUsageInfo& info = it->second;
+    info.active_capture_ids.erase(capture_id);
+
+    LOG_DEBUG("Manager: task %d finished using %s (active=%zu)",
+              capture_id, pdef_path.c_str(), info.active_capture_ids.size());
+}
+
+void CRxCaptureManagerThread::try_writeback_pdef_endian(const std::string& pdef_path)
+{
+    if (pdef_path.empty()) {
+        return;
+    }
+
+    std::map<std::string, PDEFUsageInfo>::iterator it = _pdef_usage_map.find(pdef_path);
+    if (it == _pdef_usage_map.end()) {
+        return;
+    }
+
+    PDEFUsageInfo& info = it->second;
+
+    if (!info.writeback_needed || info.writeback_done) {
+        return;
+    }
+
+
+    if (!info.active_capture_ids.empty()) {
+        LOG_DEBUG("Manager: %s still in use by %zu tasks, defer writeback",
+                  pdef_path.c_str(), info.active_capture_ids.size());
+        return;
+    }
+
+
+    LOG_NOTICE("Manager: writing back endian=%s to %s",
+               info.detected_endian == ENDIAN_TYPE_BIG ? "big" : "little",
+               pdef_path.c_str());
+
+    if (writeback_endian_to_file(pdef_path, info.detected_endian)) {
+        info.writeback_done = true;
+        LOG_NOTICE("Manager: successfully wrote back endian to %s", pdef_path.c_str());
+    } else {
+        LOG_ERROR("Manager: failed to write back endian to %s", pdef_path.c_str());
+    }
+}
+
+bool CRxCaptureManagerThread::writeback_endian_to_file(
+    const std::string& pdef_path,
+    int detected_endian)
+{
+
+    FILE* f = fopen(pdef_path.c_str(), "r");
+    if (!f) {
+        LOG_ERROR("Failed to open %s for reading: %s", pdef_path.c_str(), strerror(errno));
+        return false;
+    }
+
+    std::string content;
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), f)) {
+        content += buf;
+    }
+    fclose(f);
+
+    const char* endian_str = (detected_endian == ENDIAN_TYPE_BIG) ? "big" : "little";
+    std::string new_content;
+
+
+    size_t endian_pos = content.find("endian");
+
+    if (endian_pos != std::string::npos) {
+
+
+
+        size_t eq_pos = content.find("=", endian_pos);
+        if (eq_pos == std::string::npos || eq_pos > endian_pos + 20) {
+            LOG_WARNING("No '=' found after 'endian' in %s", pdef_path.c_str());
+            return false;
+        }
+
+
+        size_t semi_pos = content.find(";", eq_pos);
+        if (semi_pos == std::string::npos || semi_pos > eq_pos + 50) {
+            LOG_WARNING("No ';' found after '=' in %s", pdef_path.c_str());
+            return false;
+        }
+
+
+        std::string before = content.substr(0, eq_pos + 1);
+        std::string after = content.substr(semi_pos);
+        new_content = before + " " + endian_str + after;
+
+        LOG_NOTICE("Manager: replacing existing endian field with '%s'", endian_str);
+
+    } else {
+
+
+
+        size_t protocol_pos = content.find("@protocol");
+        if (protocol_pos == std::string::npos) {
+            LOG_WARNING("No '@protocol' block found in %s", pdef_path.c_str());
+            return false;
+        }
+
+
+        size_t brace_open = content.find("{", protocol_pos);
+        if (brace_open == std::string::npos) {
+            LOG_WARNING("No '{' found after '@protocol' in %s", pdef_path.c_str());
+            return false;
+        }
+
+
+        size_t insert_pos = content.find("\n", brace_open);
+        if (insert_pos == std::string::npos) {
+            insert_pos = brace_open + 1;
+        } else {
+            insert_pos += 1;
+        }
+
+
+        std::string before = content.substr(0, insert_pos);
+        std::string after = content.substr(insert_pos);
+        new_content = before + "    endian = " + endian_str + ";\n" + after;
+
+        LOG_NOTICE("Manager: adding endian field with value '%s'", endian_str);
+    }
+
+
+    std::string tmp_path = pdef_path + ".tmp";
+    FILE* tmp_f = fopen(tmp_path.c_str(), "w");
+    if (!tmp_f) {
+        LOG_ERROR("Failed to open %s for writing: %s", tmp_path.c_str(), strerror(errno));
+        return false;
+    }
+
+    size_t written = fwrite(new_content.c_str(), 1, new_content.length(), tmp_f);
+    fclose(tmp_f);
+
+    if (written != new_content.length()) {
+        LOG_ERROR("Failed to write complete content to %s", tmp_path.c_str());
+        unlink(tmp_path.c_str());
+        return false;
+    }
+
+
+    if (rename(tmp_path.c_str(), pdef_path.c_str()) != 0) {
+        LOG_ERROR("Failed to rename %s to %s: %s",
+                  tmp_path.c_str(), pdef_path.c_str(), strerror(errno));
+        unlink(tmp_path.c_str());
+        return false;
+    }
+
+    return true;
 }

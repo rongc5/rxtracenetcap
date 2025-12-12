@@ -24,6 +24,7 @@ struct TaskSnapshot
     bool cancel_requested;
     std::string filter;
     int port_filter;
+    int duration_sec;
     long start_time;
     long end_time;
     unsigned long packet_count;
@@ -43,6 +44,7 @@ struct TaskSnapshot
         , stop_requested(false)
         , cancel_requested(false)
         , port_filter(0)
+        , duration_sec(0)
         , start_time(0)
         , end_time(0)
         , packet_count(0)
@@ -206,6 +208,7 @@ struct TaskTable
         snapshot.cancel_requested = task->cancel_requested;
         snapshot.filter = task->filter;
         snapshot.port_filter = task->port_filter;
+        snapshot.duration_sec = task->duration_sec;
         snapshot.start_time = task->start_time;
         snapshot.end_time = task->end_time;
         snapshot.packet_count = task->packet_count;

@@ -112,11 +112,11 @@ std::string timestamp_suffix()
 }
 
 CRxCleanupThread::CRxCleanupThread()
-    : cleanup_interval_sec_(10)
+    : cleanup_interval_sec_(CLEANUP_INTERVAL_SEC)
     , pdef_dir_("/tmp/rxtracenetcap_pdef")
     , pdef_ttl_seconds_(24 * 3600L)
     , current_record_size_(0)
-    , record_max_size_bytes_(50 * 1024UL * 1024UL)
+    , record_max_size_bytes_(RECORD_MAX_SIZE_BYTES)
     , compress_threshold_bytes_(0)
     , archive_max_total_bytes_(0)
     , archive_retention_seconds_(0)
@@ -127,25 +127,18 @@ CRxCleanupThread::~CRxCleanupThread()
 {
 }
 
-void CRxCleanupThread::configure(const CRxServerConfig::CleanupConfig& cfg)
+void CRxCleanupThread::configure(const CRxServerConfig::CleanupConfig& cfg, const CRxServerConfig::StorageConfig& storage_cfg)
 {
     config_ = cfg;
-    if (cfg.compress_interval_sec > 0) {
-        cleanup_interval_sec_ = cfg.compress_interval_sec;
-    }
-    pdef_dir_ = cfg.pdef_dir.empty() ? "/tmp/rxtracenetcap_pdef" : cfg.pdef_dir;
-    if (cfg.pdef_ttl_hours > 0) {
-        long ttl = static_cast<long>(cfg.pdef_ttl_hours) * 3600L;
+
+
+    pdef_dir_ = storage_cfg.temp_pdef_dir.empty() ? "/tmp/rxtracenetcap_pdef" : storage_cfg.temp_pdef_dir;
+    if (storage_cfg.temp_pdef_ttl_hours > 0) {
+        long ttl = static_cast<long>(storage_cfg.temp_pdef_ttl_hours) * 3600L;
         pdef_ttl_seconds_ = ttl < 0 ? 0 : ttl;
     } else {
         pdef_ttl_seconds_ = 0;
     }
-    record_max_size_bytes_ = cfg.record_max_size_mb > 0
-        ? static_cast<unsigned long>(cfg.record_max_size_mb) * 1024UL * 1024UL
-        : 50 * 1024UL * 1024UL;
-    compress_threshold_bytes_ = cfg.compress_threshold_mb > 0
-        ? static_cast<unsigned long>(cfg.compress_threshold_mb) * 1024UL * 1024UL
-        : 0;
     if (cfg.archive_keep_days > 0) {
         long days = cfg.archive_keep_days;
         if (days > LONG_MAX / 86400L) {
@@ -169,8 +162,9 @@ bool CRxCleanupThread::start()
     if (!base_net_thread::start()) {
         return false;
     }
-    if (!ensure_directory(config_.record_dir)) {
-        LOG_WARNING("Cleanup: failed to ensure record directory %s", config_.record_dir.c_str());
+    std::string record_dir = get_record_base_dir();
+    if (!ensure_directory(record_dir)) {
+        LOG_WARNING("Cleanup: failed to ensure record directory %s", record_dir.c_str());
     }
     if (!ensure_directory(config_.archive_dir)) {
         LOG_WARNING("Cleanup: failed to ensure archive directory %s", config_.archive_dir.c_str());
@@ -339,22 +333,67 @@ void CRxCleanupThread::process_pending_files()
         return;
     }
 
-    std::vector<PendingFile>::iterator it = pending_files_.begin();
-    while (it != pending_files_.end()) {
-        CaptureArchiveInfo archive;
-        std::string error;
-        if (compress_file(*it, archive, error)) {
-            if (!archive.files.empty()) {
-                notify_archive_result(it->capture_id, it->key, it->sid, archive);
-            }
-            it = pending_files_.erase(it);
-        } else {
-            std::vector<CaptureFileInfo> failed;
-            failed.push_back(it->file);
-            notify_archive_failure(it->capture_id, it->key, it->sid, failed, error);
-            it = pending_files_.erase(it);
+
+    size_t total_count = pending_files_.size();
+    unsigned long long total_size = 0;
+    for (size_t i = 0; i < pending_files_.size(); ++i) {
+        struct stat st;
+        if (stat(pending_files_[i].file.file_path.c_str(), &st) == 0) {
+            total_size += static_cast<unsigned long long>(st.st_size);
         }
     }
+
+
+    unsigned long long threshold_bytes = static_cast<unsigned long long>(config_.batch_compress_size_mb) * 1024ULL * 1024ULL;
+    bool should_compress = (total_count >= config_.batch_compress_file_count) ||
+                          (total_size >= threshold_bytes);
+
+    if (!should_compress) {
+        LOG_DEBUG("Cleanup: batch compression threshold not met (count=%zu/%u, size=%llu/%llu MB)",
+                  total_count, config_.batch_compress_file_count,
+                  total_size / (1024ULL * 1024ULL),
+                  static_cast<unsigned long long>(config_.batch_compress_size_mb));
+        return;
+    }
+
+
+    LOG_NOTICE("Cleanup: starting batch compression for %zu files (total size=%llu MB)",
+               total_count, total_size / (1024ULL * 1024ULL));
+
+
+    std::map<int, std::vector<PendingFile> > groups;
+    for (size_t i = 0; i < pending_files_.size(); ++i) {
+        groups[pending_files_[i].capture_id].push_back(pending_files_[i]);
+    }
+
+
+    for (std::map<int, std::vector<PendingFile> >::iterator it = groups.begin();
+         it != groups.end(); ++it) {
+        CaptureArchiveInfo archive;
+        std::string error;
+        if (compress_batch(it->second, archive, error)) {
+            if (!archive.files.empty() && !it->second.empty()) {
+                notify_archive_result(it->second[0].capture_id,
+                                    it->second[0].key,
+                                    it->second[0].sid,
+                                    archive);
+            }
+        } else {
+            if (!it->second.empty()) {
+                std::vector<CaptureFileInfo> failed;
+                for (size_t i = 0; i < it->second.size(); ++i) {
+                    failed.push_back(it->second[i].file);
+                }
+                notify_archive_failure(it->second[0].capture_id,
+                                     it->second[0].key,
+                                     it->second[0].sid,
+                                     failed, error);
+            }
+        }
+    }
+
+
+    pending_files_.clear();
 }
 
 bool CRxCleanupThread::compress_file(const PendingFile& pending,
@@ -407,23 +446,13 @@ bool CRxCleanupThread::compress_file(const PendingFile& pending,
         char seqbuf[32];
         snprintf(seqbuf, sizeof(seqbuf), "%d_%d", pending.capture_id, pending.file.segment_index);
         archive_path += seqbuf;
-        archive_path += ".";
-        archive_path += config_.archive_format.empty() ? "tgz" : config_.archive_format;
+        archive_path += ".tgz";
 
-        if (config_.archive_format.empty() || config_.archive_format == "tgz" || config_.archive_format == "tar.gz") {
-            command = "tar -czf '";
-            command += archive_path;
-            command += "' '";
-            command += pending.file.file_path;
-            command += "'";
-        } else {
-            command = config_.archive_format;
-            command += " '";
-            command += archive_path;
-            command += "' '";
-            command += pending.file.file_path;
-            command += "'";
-        }
+        command = "tar -czf '";
+        command += archive_path;
+        command += "' '";
+        command += pending.file.file_path;
+        command += "'";
     }
 
     LOG_NOTICE("Cleanup: compressing %s with command: %s", pending.file.file_path.c_str(), command.c_str());
@@ -484,9 +513,132 @@ bool CRxCleanupThread::compress_file(const PendingFile& pending,
     return true;
 }
 
+bool CRxCleanupThread::compress_batch(const std::vector<PendingFile>& files,
+                                       CaptureArchiveInfo& archive,
+                                       std::string& error_msg)
+{
+    if (files.empty()) {
+        error_msg = "no_files_to_compress";
+        return false;
+    }
+
+
+    if (!ensure_directory(config_.archive_dir)) {
+        LOG_WARNING("Cleanup: archive directory %s unavailable", config_.archive_dir.c_str());
+        error_msg = "archive_dir_unavailable";
+        return false;
+    }
+
+
+    std::string archive_path = config_.archive_dir;
+    if (!archive_path.empty() && archive_path[archive_path.size() - 1] != '/') {
+        archive_path += "/";
+    }
+    archive_path += "batch_";
+    archive_path += timestamp_suffix();
+    archive_path += "_";
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d", files[0].capture_id);
+    archive_path += buf;
+    archive_path += ".tar.gz";
+
+
+    std::string command = "tar -czf '";
+    command += archive_path;
+    command += "'";
+    size_t file_count = 0;
+    for (size_t i = 0; i < files.size(); ++i) {
+
+        std::string filename = files[i].file.file_path;
+        size_t pos = filename.find_last_of('/');
+        std::string basename = (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
+        if (basename.find("cleanup") == 0 && basename.find(".log") != std::string::npos) {
+            LOG_DEBUG("Cleanup: skipping record file %s from compression", filename.c_str());
+            continue;
+        }
+        command += " '";
+        command += files[i].file.file_path;
+        command += "'";
+        file_count++;
+    }
+
+    if (file_count == 0) {
+        LOG_WARNING("Cleanup: no files to compress after filtering");
+        error_msg = "no_files_after_filter";
+        return false;
+    }
+
+    LOG_NOTICE("Cleanup: batch compressing %zu files into %s", files.size(), archive_path.c_str());
+    int rc = std::system(command.c_str());
+    if (rc != 0) {
+        LOG_WARNING("Cleanup: batch compression command failed rc=%d", rc);
+        error_msg = "compress_failed";
+        return false;
+    }
+
+
+    struct stat archive_st;
+    unsigned long archive_size = 0;
+    if (stat(archive_path.c_str(), &archive_st) == 0) {
+        archive_size = static_cast<unsigned long>(archive_st.st_size);
+    }
+
+
+    if (config_.archive_remove_source) {
+        for (size_t i = 0; i < files.size(); ++i) {
+
+            std::string filename = files[i].file.file_path;
+            size_t pos = filename.find_last_of('/');
+            std::string basename = (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
+            if (basename.find("cleanup") == 0 && basename.find(".log") != std::string::npos) {
+                LOG_DEBUG("Cleanup: skipping record file %s from removal", filename.c_str());
+                continue;
+            }
+            if (::remove(files[i].file.file_path.c_str()) != 0) {
+                LOG_WARNING("Cleanup: failed to remove source file %s", files[i].file.file_path.c_str());
+            }
+        }
+    }
+
+
+    archive.archive_path = archive_path;
+    archive.archive_size = archive_size;
+    archive.compress_finish_ts = static_cast<int64_t>(time(NULL));
+    archive.files.clear();
+
+    for (size_t i = 0; i < files.size(); ++i) {
+        CaptureFileInfo compressed = files[i].file;
+        compressed.compressed = true;
+        compressed.archive_path = archive_path;
+        compressed.compress_finish_ts = archive.compress_finish_ts;
+        archive.files.push_back(compressed);
+    }
+
+    LOG_NOTICE("Cleanup: batch compression complete, %zu files -> %s (size=%lu)",
+               files.size(), archive_path.c_str(), archive_size);
+    return true;
+}
+
+std::string CRxCleanupThread::get_record_base_dir() const
+{
+
+    std::string base;
+    CRxProcData* global = CRxProcData::instance();
+    if (global) {
+        CRxStrategyConfigManager* cfg = global->current_strategy_config();
+        if (cfg) {
+            base = cfg->storage().base_dir;
+        }
+    }
+    if (base.empty()) {
+        base = "/var/log/rxtrace/captures";
+    }
+    return base;
+}
+
 std::string CRxCleanupThread::current_record_file() const
 {
-    std::string base = config_.record_dir;
+    std::string base = get_record_base_dir();
     if (!base.empty() && base[base.size() - 1] != '/') {
         base += "/";
     }
@@ -514,7 +666,7 @@ void CRxCleanupThread::rotate_record_file_if_needed(size_t incoming_size)
         return;
     }
 
-    std::string rotated = config_.record_dir;
+    std::string rotated = get_record_base_dir();
     if (!rotated.empty() && rotated[rotated.size() - 1] != '/') {
         rotated += "/";
     }
@@ -535,11 +687,8 @@ void CRxCleanupThread::rotate_record_file_if_needed(size_t incoming_size)
 
 void CRxCleanupThread::prune_record_files()
 {
-    if (config_.record_max_files == 0) {
-        return;
-    }
-
-    DIR* dir = opendir(config_.record_dir.c_str());
+    std::string record_dir = get_record_base_dir();
+    DIR* dir = opendir(record_dir.c_str());
     if (!dir) {
         return;
     }
@@ -554,7 +703,7 @@ void CRxCleanupThread::prune_record_files()
         if (name.find("cleanup") != 0) {
             continue;
         }
-        std::string path = config_.record_dir;
+        std::string path = record_dir;
         if (!path.empty() && path[path.size() - 1] != '/') {
             path += "/";
         }
@@ -569,13 +718,13 @@ void CRxCleanupThread::prune_record_files()
     }
     closedir(dir);
 
-    if (entries.size() <= config_.record_max_files) {
+    if (entries.size() <= RECORD_MAX_FILES) {
         return;
     }
 
     std::sort(entries.begin(), entries.end(), record_entry_less);
 
-    size_t to_remove = entries.size() - config_.record_max_files;
+    size_t to_remove = entries.size() - RECORD_MAX_FILES;
     for (size_t i = 0; i < to_remove; ++i) {
         if (::remove(entries[i].path.c_str()) == 0) {
             LOG_NOTICE("Cleanup: pruned old record file %s", entries[i].path.c_str());
@@ -599,8 +748,9 @@ std::string CRxCleanupThread::record_file_metadata(int capture_id,
         << "}\n";
 
     std::string line = oss.str();
-    if (!ensure_directory(config_.record_dir)) {
-        LOG_WARNING("Cleanup: record directory %s unavailable", config_.record_dir.c_str());
+    std::string record_dir = get_record_base_dir();
+    if (!ensure_directory(record_dir)) {
+        LOG_WARNING("Cleanup: record directory %s unavailable", record_dir.c_str());
         return std::string();
     }
 

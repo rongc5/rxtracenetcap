@@ -19,7 +19,7 @@ uint32_t field_type_size(FieldType type) {
         case FIELD_TYPE_STRING:
         case FIELD_TYPE_VARBYTES:
         case FIELD_TYPE_NESTED:
-            return 0;  /* Variable or context-dependent */
+            return 0;
         default:
             return 0;
     }

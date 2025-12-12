@@ -3,7 +3,6 @@
 
 @protocol {
     name = "MySQL";
-    ports = 3306;
     endian = little;
 }
 

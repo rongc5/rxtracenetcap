@@ -1,0 +1,37 @@
+{
+  "sample": {
+    "triggers": [
+      {
+        "name": "cpu_surged",
+        "cpu_pct_gt": 85,
+        "trigger_capture": "iface:any",
+        "capture_duration_sec": 90,
+        "cooldown_sec": 300
+      },
+      {
+        "name": "memory_spike",
+        "mem_pct_gt": 92,
+        "trigger_capture": "iface:any",
+        "capture_duration_sec": 60,
+        "cooldown_sec": 600
+      },
+      {
+        "name": "nginx_hotspot",
+        "net_rx_kbps_gt": 12000,
+        "trigger_capture": "process:nginx",
+        "capture_category": "auto-nginx",
+        "capture_duration_sec": 120,
+        "cooldown_sec": 900
+      }
+    ]
+  },
+  "protocols": {
+    "mysql": "config/protocols/mysql.pdef",
+    "redis": "config/protocols/redis.pdef",
+    "http": "config/protocols/http.pdef",
+    "dns": "config/protocols/dns.pdef",
+    "mqtt": "config/protocols/mqtt.pdef",
+    "iec104": "config/protocols/iec104.pdef",
+    "memcached": "config/protocols/memcached.pdef"
+  }
+}

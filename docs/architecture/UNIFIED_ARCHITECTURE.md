@@ -11,7 +11,7 @@
 
 ```
 [捕获线程] --RX_MSG_PACKET_CAPTURED--> [过滤/写入线程] --> 文件
-    ↓                                       ↓
+                                           
 pcap_dispatch()                    if (有 PDEF) {
                                        过滤（支持滑动窗口）+ 写入
                                    } else {
@@ -22,7 +22,7 @@ pcap_dispatch()                    if (有 PDEF) {
 **注意**：
 -  滑动窗口已实现（pdef_types.h、parser.c、runtime/protocol.c）
 -  过滤线程直接写文件（不使用独立的写入线程）
-- ⚪ rxwriterthread.* 已编译但未启用（备用）
+-  rxwriterthread.* 已编译但未启用（备用）
 
 ## 架构优势
 
@@ -292,11 +292,11 @@ bool CRxFilterThread::apply_filter(const SRxPacketMsg* packet) {
 
 | 文件 | 状态 | 说明 |
 |------|------|------|
-| `rxwriterthread.cpp` | ⚪ 未使用 | 3 线程架构的写入线程，已被过滤线程兼职写入替代 |
-| `rxwriterthread.h` | ⚪ 未使用 | 同上 |
-| `rxlockfreequeue.c` | ⚪ 未使用 | 备用的无锁队列，当前使用消息机制 |
-| `rxlockfreequeue.h` | ⚪ 未使用 | 同上 |
-| `RX_MSG_PACKET_FILTERED` | ⚪ 未使用 | 写入线程的消息类型（消息码 6002） |
+| `rxwriterthread.cpp` |  未使用 | 3 线程架构的写入线程，已被过滤线程兼职写入替代 |
+| `rxwriterthread.h` |  未使用 | 同上 |
+| `rxlockfreequeue.c` |  未使用 | 备用的无锁队列，当前使用消息机制 |
+| `rxlockfreequeue.h` |  未使用 | 同上 |
+| `RX_MSG_PACKET_FILTERED` |  未使用 | 写入线程的消息类型（消息码 6002） |
 
 **建议**：
 - 保留代码以备将来 3 线程架构使用
@@ -503,13 +503,13 @@ python3 /tmp/test_iec104.py
 | **无 PDEF 直接写** |  支持 | rxfilterthread.cpp:98-100 |
 | **Fallback 机制** |  保留 | rxstorageutils.cpp:353-367 |
 
-### 未启用组件 ⚪
+### 未启用组件 
 
 | 组件 | 状态 | 说明 |
 |------|------|------|
-| `rxwriterthread.cpp` | ⚪ 已编译未用 | Makefile:33，为3线程架构预留 |
-| `rxlockfreequeue.c` | ⚪ 已编译未用 | Makefile:34，备用高性能队列 |
-| `RX_MSG_PACKET_FILTERED` | ⚪ 已定义未用 | rxmsgtypes.h:78，写入线程消息 |
+| `rxwriterthread.cpp` |  已编译未用 | Makefile:33，为3线程架构预留 |
+| `rxlockfreequeue.c` |  已编译未用 | Makefile:34，备用高性能队列 |
+| `RX_MSG_PACKET_FILTERED` |  已定义未用 | rxmsgtypes.h:78，写入线程消息 |
 
 ### 代码改动统计
 
@@ -545,7 +545,7 @@ python3 /tmp/test_iec104.py
 
 2. **功能扩展**
    - 支持多个过滤/写入线程（负载均衡）
-   - 启用 3 线程架构（捕获→过滤→写入）
+   - 启用 3 线程架构（捕获过滤写入）
    - 添加配置选项：`use_message_driven = true/false`
 
 3. **测试完善**

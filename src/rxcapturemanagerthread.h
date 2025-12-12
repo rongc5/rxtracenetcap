@@ -19,9 +19,11 @@ using compat::make_shared;
 
 enum ERxCaptureTimer {
     TIMER_TYPE_QUEUE_CHECK = 1,
-    TIMER_TYPE_EXPIRE_CLEAN = 2,
-    TIMER_TYPE_BATCH_COMPRESS = 3
+    TIMER_TYPE_EXPIRE_CLEAN = 2
 };
+
+
+static const int QUEUE_TIMER_INTERVAL_MS = 1000;
 
 struct SRxSampleMsg;
 
@@ -53,8 +55,9 @@ private:
     void handle_capture_file_ready_v2(shared_ptr<normal_msg>& msg);
     void handle_capture_finished_v2(shared_ptr<normal_msg>& msg);
     void handle_capture_failed_v2(shared_ptr<normal_msg>& msg);
+    void handle_capture_raw_file_v2(shared_ptr<normal_msg>& msg);
+    void handle_capture_filtered_file_v2(shared_ptr<normal_msg>& msg);
     void handle_clean_expired(shared_ptr<normal_msg>& msg);
-    void handle_compress_files(shared_ptr<normal_msg>& msg);
     void handle_check_threshold(shared_ptr<normal_msg>& msg);
     void handle_clean_compress_done(shared_ptr<normal_msg>& msg);
     void handle_clean_compress_failed(shared_ptr<normal_msg>& msg);
@@ -68,11 +71,8 @@ private:
 
     void start_queue_timer();
     void start_clean_timer();
-    void start_compress_timer();
-
     void check_queue();
     void clean_expired_files();
-    void batch_compress_files();
     void check_system_threshold();
 
     bool resolve_target_processes(shared_ptr<SRxStartCaptureMsg>& start_msg,
@@ -103,13 +103,37 @@ private:
                                  shared_ptr<SRxStartCaptureMsg>& legacy_msg);
     void send_reply_to_http(const ObjId& reply_target, shared_ptr<SRxHttpReplyMsg>& reply);
 
+
+    void handle_pdef_endian_detected(shared_ptr<normal_msg>& msg);
+    void track_pdef_usage_start(int capture_id, const std::string& pdef_path);
+    void track_pdef_usage_end(int capture_id, const std::string& pdef_path);
+    void try_writeback_pdef_endian(const std::string& pdef_path);
+    bool writeback_endian_to_file(const std::string& pdef_path, int detected_endian);
+
 private:
     bool _is_first;
 
     std::vector<class CRxCaptureThread*> _capture_threads;
+    std::vector<class CRxFilterThread*> _filter_threads;
+    size_t _next_filter_thread_idx;
 
     std::vector<uint32_t> _worker_thd_vec;
     std::map<std::string, time_t> _module_last_trigger;
+
+
+    struct PDEFUsageInfo {
+        std::set<int> active_capture_ids;
+        int detected_endian;
+        bool writeback_needed;
+        bool writeback_done;
+
+        PDEFUsageInfo()
+            : detected_endian(0)
+            , writeback_needed(false)
+            , writeback_done(false)
+        {}
+    };
+    std::map<std::string, PDEFUsageInfo> _pdef_usage_map;
 };
 
 #endif

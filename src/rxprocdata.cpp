@@ -253,10 +253,12 @@ int CRxProcData::load()
         _strategy_dict->load();
     }
 
-    if (!_threads_initialized)
-    {
-        init_threads();
-    }
+
+
+
+
+
+
 
     return 0;
 }
@@ -292,7 +294,7 @@ int CRxProcData::init_threads()
         return -1;
     }
     if (_conf) {
-        _cleanup_thread->configure(_conf->cleanup());
+        _cleanup_thread->configure(_conf->cleanup(), _conf->storage());
     }
 
     _reload_thread = new (std::nothrow) CRxReloadThread();
@@ -308,6 +310,7 @@ int CRxProcData::init_threads()
         LOG_ERROR("Failed to start CRxCaptureManagerThread");
         return -1;
     }
+    LOG_NOTICE("CRxCaptureManagerThread started successfully");
 
     LOG_NOTICE("Starting CRxSampleThread...");
     if (!_sample_thread->start())
@@ -419,7 +422,6 @@ CaptureConfigSnapshot CRxProcData::get_capture_config_snapshot() const
         snapshot.max_packets = 0;
         snapshot.snaplen = 65535;
 
-        snapshot.compress_enabled = storage.compress_enabled;
         if (storage.progress_bytes_threshold > 0) {
             snapshot.compress_threshold_mb = static_cast<int>(storage.progress_bytes_threshold / (1024 * 1024));
             if (snapshot.compress_threshold_mb <= 0) {
@@ -428,9 +430,7 @@ CaptureConfigSnapshot CRxProcData::get_capture_config_snapshot() const
         } else {
             snapshot.compress_threshold_mb = 0;
         }
-        snapshot.compress_format = storage.compress_cmd;
         snapshot.compress_level = 0;
-        snapshot.compress_remove_src = storage.compress_remove_src;
 
         snapshot.retain_days = storage.max_age_days;
         snapshot.clean_batch_size = storage.compress_batch_interval_sec;

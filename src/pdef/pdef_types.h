@@ -9,13 +9,13 @@
 extern "C" {
 #endif
 
-/*
- * Note: We use plain int/bool types for endian fields.
- * Atomic operations are performed using GCC built-in functions
- * (__sync_val_compare_and_swap, etc.) for C++98 compatibility.
- */
 
-/* ========== Field Types ========== */
+
+
+
+
+
+
 
 typedef enum {
     FIELD_TYPE_UINT8,
@@ -29,7 +29,7 @@ typedef enum {
     FIELD_TYPE_BYTES,
     FIELD_TYPE_STRING,
     FIELD_TYPE_VARBYTES,
-    FIELD_TYPE_NESTED,      /* For nested struct references */
+    FIELD_TYPE_NESTED,
 } FieldType;
 
 typedef enum {
@@ -49,134 +49,134 @@ typedef enum {
     ENDIAN_TYPE_LITTLE,
 } EndianType;
 
-/* ========== Field Definition ========== */
+
 
 typedef struct {
-    char        name[128];      /* Field name (with nested path, e.g., "header.magic") */
-    FieldType   type;           /* Field type */
-    uint32_t    offset;         /* Absolute offset in bytes (after flattening) */
-    uint32_t    size;           /* Field size in bytes */
-    Endian      endian;         /* Byte order */
-    bool        is_variable;    /* Is this a variable-length field? */
-    bool        is_array;       /* Is this field an array (Type field[N])? */
-    uint32_t    array_size;     /* Number of elements for arrays (1 for non-array) */
+    char        name[128];
+    FieldType   type;
+    uint32_t    offset;
+    uint32_t    size;
+    Endian      endian;
+    bool        is_variable;
+    bool        is_array;
+    uint32_t    array_size;
 } Field;
 
-/* ========== Structure Definition ========== */
+
 
 typedef struct {
-    char        name[64];       /* Structure name */
-    Field*      fields;         /* Array of fields (flattened) */
-    uint32_t    field_count;    /* Number of fields */
-    uint32_t    min_size;       /* Minimum packet size (excluding variable-length part) */
-    bool        has_variable;   /* Contains variable-length field? */
+    char        name[64];
+    Field*      fields;
+    uint32_t    field_count;
+    uint32_t    min_size;
+    bool        has_variable;
 } StructDef;
 
-/* ========== Bytecode Instructions ========== */
+
 
 typedef enum {
-    /* Load instructions */
-    OP_LOAD_U8,         /* Load uint8 from packet */
-    OP_LOAD_U16_BE,     /* Load uint16 (big-endian) */
-    OP_LOAD_U16_LE,     /* Load uint16 (little-endian) */
-    OP_LOAD_U32_BE,     /* Load uint32 (big-endian) */
-    OP_LOAD_U32_LE,     /* Load uint32 (little-endian) */
-    OP_LOAD_U64_BE,     /* Load uint64 (big-endian) */
-    OP_LOAD_U64_LE,     /* Load uint64 (little-endian) */
-    OP_LOAD_I8,         /* Load int8 */
-    OP_LOAD_I16_BE,     /* Load int16 (big-endian) */
-    OP_LOAD_I16_LE,     /* Load int16 (little-endian) */
-    OP_LOAD_I32_BE,     /* Load int32 (big-endian) */
-    OP_LOAD_I32_LE,     /* Load int32 (little-endian) */
-    OP_LOAD_I64_BE,     /* Load int64 (big-endian) */
-    OP_LOAD_I64_LE,     /* Load int64 (little-endian) */
 
-    /* Comparison instructions */
-    OP_CMP_EQ,          /* Compare equal (==) */
-    OP_CMP_NE,          /* Compare not equal (!=) */
-    OP_CMP_GT,          /* Greater than (>) */
-    OP_CMP_GE,          /* Greater or equal (>=) */
-    OP_CMP_LT,          /* Less than (<) */
-    OP_CMP_LE,          /* Less or equal (<=) */
-    OP_CMP_MASK,        /* Mask comparison (value & mask == expected) */
+    OP_LOAD_U8,
+    OP_LOAD_U16_BE,
+    OP_LOAD_U16_LE,
+    OP_LOAD_U32_BE,
+    OP_LOAD_U32_LE,
+    OP_LOAD_U64_BE,
+    OP_LOAD_U64_LE,
+    OP_LOAD_I8,
+    OP_LOAD_I16_BE,
+    OP_LOAD_I16_LE,
+    OP_LOAD_I32_BE,
+    OP_LOAD_I32_LE,
+    OP_LOAD_I64_BE,
+    OP_LOAD_I64_LE,
 
-    /* Control flow */
-    OP_JUMP_IF_FALSE,   /* Conditional jump (if accumulator is false) */
-    OP_JUMP,            /* Unconditional jump */
-    OP_RETURN_TRUE,     /* Return match success */
-    OP_RETURN_FALSE,    /* Return match failure */
+
+    OP_CMP_EQ,
+    OP_CMP_NE,
+    OP_CMP_GT,
+    OP_CMP_GE,
+    OP_CMP_LT,
+    OP_CMP_LE,
+    OP_CMP_MASK,
+
+
+    OP_JUMP_IF_FALSE,
+    OP_JUMP,
+    OP_RETURN_TRUE,
+    OP_RETURN_FALSE,
 } OpCode;
 
 typedef struct {
-    OpCode      opcode;         /* Operation code */
-    uint32_t    offset;         /* Data offset for LOAD instructions */
-    uint64_t    operand;        /* Operand (comparison value, mask, etc.) */
-    uint64_t    operand2;       /* Second operand (for OP_CMP_MASK: expected value after masking) */
-    uint32_t    jump_target;    /* Jump target (instruction index) */
+    OpCode      opcode;
+    uint32_t    offset;
+    uint64_t    operand;
+    uint64_t    operand2;
+    uint32_t    jump_target;
 } Instruction;
 
-/* ========== Filter Rule ========== */
+
 
 typedef struct {
-    char            name[64];           /* Rule name */
-    char            struct_name[64];    /* Associated structure name */
-    Instruction*    bytecode;           /* Bytecode instruction sequence */
-    uint32_t        bytecode_len;       /* Number of instructions */
-    Instruction*    bytecode_be;        /* Big-endian bytecode */
-    uint32_t        bytecode_be_len;    /* Big-endian bytecode length */
-    Instruction*    bytecode_le;        /* Little-endian bytecode */
-    uint32_t        bytecode_le_len;    /* Little-endian bytecode length */
-    uint32_t        min_packet_size;    /* Minimum packet size requirement */
-    bool            sliding_window;     /* Enable sliding window matching */
-    uint32_t        sliding_max_offset; /* Maximum search offset (0 = unlimited) */
+    char            name[64];
+    char            struct_name[64];
+    Instruction*    bytecode;
+    uint32_t        bytecode_len;
+    Instruction*    bytecode_be;
+    uint32_t        bytecode_be_len;
+    Instruction*    bytecode_le;
+    uint32_t        bytecode_le_len;
+    uint32_t        min_packet_size;
+    bool            sliding_window;
+    uint32_t        sliding_max_offset;
 } FilterRule;
 
-/* ========== Protocol Definition ========== */
+
 
 typedef struct {
-    char            name[64];           /* Protocol name */
-    uint16_t*       ports;              /* Port list */
-    uint32_t        port_count;         /* Number of ports */
-    Endian          default_endian;     /* Default byte order */
+    char            name[64];
+    uint16_t*       ports;
+    uint32_t        port_count;
+    Endian          default_endian;
 
-    StructDef*      structs;            /* Array of structures */
-    uint32_t        struct_count;       /* Number of structures */
+    StructDef*      structs;
+    uint32_t        struct_count;
 
-    FilterRule*     filters;            /* Array of filter rules */
-    uint32_t        filter_count;       /* Number of filter rules */
+    FilterRule*     filters;
+    uint32_t        filter_count;
 
-    /* Constants table (name -> value mapping) */
-    struct ConstantEntry* constants;    /* Hash table for constants */
-    uint32_t        constant_count;     /* Number of constants */
 
-    /* Endian auto-detection support */
-    EndianMode      endian_mode;           /* Configured endian mode */
-    volatile int    detected_endian;       /* Runtime-detected endian (for AUTO) - use atomic ops */
-    volatile int    endian_writeback_done; /* Whether writeback message has been sent - use atomic ops */
-    char            pdef_file_path[256];   /* Source path (set by pdef_parse_file) */
+    struct ConstantEntry* constants;
+    uint32_t        constant_count;
+
+
+    EndianMode      endian_mode;
+    volatile int    detected_endian;
+    volatile int    endian_writeback_done;
+    char            pdef_file_path[256];
 } ProtocolDef;
 
-/* ========== Constant Entry ========== */
+
 
 typedef struct ConstantEntry {
-    char                    name[64];   /* Constant name */
-    uint64_t                value;      /* Constant value */
-    struct ConstantEntry*   next;       /* For hash table chaining */
+    char                    name[64];
+    uint64_t                value;
+    struct ConstantEntry*   next;
 } ConstantEntry;
 
-/* ========== Helper Functions ========== */
 
-/* Get field type size in bytes (0 for variable-length types) */
+
+
 uint32_t field_type_size(FieldType type);
 
-/* Get field type name as string */
+
 const char* field_type_name(FieldType type);
 
-/* Get opcode name as string (for debugging) */
+
 const char* opcode_name(OpCode opcode);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* PDEF_TYPES_H */
+#endif

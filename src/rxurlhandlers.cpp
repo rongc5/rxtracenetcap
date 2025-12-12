@@ -145,7 +145,7 @@ static std::string get_configured_pdef_dir()
     if (!pdata || !pdata->server_config()) {
         return fallback;
     }
-    const std::string& cfg_dir = pdata->server_config()->cleanup().pdef_dir;
+    const std::string& cfg_dir = pdata->server_config()->storage().temp_pdef_dir;
     return cfg_dir.empty() ? fallback : cfg_dir;
 }
 
@@ -221,7 +221,7 @@ bool CRxUrlHandlerCaptureApi::perform(http_req_head_para* req_head,
         return handle_start(req_head, recv_body, res_head, send_body, conn_id);
     } else if (path.find("/api/capture/stop") == 0 && method == "POST") {
         return handle_stop(req_head, recv_body, res_head, send_body, conn_id);
-    } else if (path.find("/api/capture/status") == 0 && method == "GET") {
+    } else if (path.find("/api/capture/status") == 0 && (method == "GET" || method == "POST")) {
         return handle_status(req_head, recv_body, res_head, send_body, conn_id);
     } else {
         set_error_response(res_head, send_body, 404, "Not found");
@@ -293,28 +293,30 @@ bool CRxUrlHandlerCaptureApi::handle_start(http_req_head_para* req_head,
         if (doc.HasMember("protocol") && doc["protocol"].IsString()) {
             std::string protocol_name = doc["protocol"].GetString();
 
-            /* Try to lookup protocol name in strategy config */
+
             CRxProcData* pdata = CRxProcData::instance();
             CRxStrategyConfigManager* cfg = pdata ? pdata->current_strategy_config() : NULL;
             if (cfg) {
                 std::string pdef_path = cfg->get_protocol_pdef_path(protocol_name);
                 if (!pdef_path.empty()) {
-                    /* Found in config mapping */
+
                     msg->protocol_filter = pdef_path;
                 } else {
-                    /* Not found in config, try auto-discovery: config/protocols/<name>.pdef */
+
                     msg->protocol_filter = "config/protocols/" + protocol_name + ".pdef";
                 }
             } else {
-                /* Fallback: auto-discovery */
+
                 msg->protocol_filter = "config/protocols/" + protocol_name + ".pdef";
             }
         }
         if (doc.HasMember("protocol_filter") && doc["protocol_filter"].IsString()) {
             msg->protocol_filter = doc["protocol_filter"].GetString();
+            fprintf(stderr, "[DEBUG API] Set protocol_filter='%s'\n", msg->protocol_filter.c_str());
         }
         if (doc.HasMember("protocol_filter_inline") && doc["protocol_filter_inline"].IsString()) {
             msg->protocol_filter_inline = doc["protocol_filter_inline"].GetString();
+            fprintf(stderr, "[DEBUG API] Set protocol_filter_inline='%s'\n", msg->protocol_filter_inline.c_str());
         }
         if (doc.HasMember("ip") && doc["ip"].IsString()) {
             msg->ip_filter = doc["ip"].GetString();
@@ -441,22 +443,50 @@ bool CRxUrlHandlerCaptureApi::handle_status(http_req_head_para* req_head,
                                             std::string* send_body,
                                             const ObjId& conn_id)
 {
-    (void)recv_body;
     (void)conn_id;
-
-    std::string path = req_head->_url_path;
-    std::map<std::string, std::string> params = parse_query_params(path);
 
     int capture_id = 0;
     std::string sid;
+    std::string method = req_head->_method;
 
-    std::map<std::string, std::string>::const_iterator id_it = params.find("id");
-    if (id_it != params.end()) {
-        capture_id = std::atoi(id_it->second.c_str());
-    }
-    std::map<std::string, std::string>::const_iterator sid_it = params.find("sid");
-    if (sid_it != params.end()) {
-        sid = sid_it->second;
+
+    if (method == "POST" && recv_body && !recv_body->empty()) {
+
+        rapidjson::Document doc;
+        doc.Parse(recv_body->c_str());
+        if (doc.HasParseError()) {
+            set_error_response(res_head, send_body, 400, "Invalid JSON");
+            return true;
+        }
+
+        if (doc.IsObject()) {
+            if (doc.HasMember("capture_id") && doc["capture_id"].IsInt()) {
+                capture_id = doc["capture_id"].GetInt();
+            } else if (doc.HasMember("id") && doc["id"].IsInt()) {
+                capture_id = doc["id"].GetInt();
+            }
+
+            if (doc.HasMember("sid") && doc["sid"].IsString()) {
+                sid = doc["sid"].GetString();
+            }
+        }
+    } else {
+
+        std::string path = req_head->_url_path;
+        std::map<std::string, std::string> params = parse_query_params(path);
+
+        std::map<std::string, std::string>::const_iterator id_it = params.find("id");
+        if (id_it != params.end()) {
+            capture_id = std::atoi(id_it->second.c_str());
+        }
+        std::map<std::string, std::string>::const_iterator capture_id_it = params.find("capture_id");
+        if (capture_id_it != params.end()) {
+            capture_id = std::atoi(capture_id_it->second.c_str());
+        }
+        std::map<std::string, std::string>::const_iterator sid_it = params.find("sid");
+        if (sid_it != params.end()) {
+            sid = sid_it->second;
+        }
     }
 
     if (capture_id == 0 && sid.empty()) {
@@ -679,7 +709,7 @@ bool CRxUrlHandlerPdefUpload::perform(http_req_head_para* req_head,
                                       const ObjId& conn_id)
 {
     (void)conn_id;
-    
+
     if (!req_head) {
         return true;
     }
@@ -694,13 +724,13 @@ bool CRxUrlHandlerPdefUpload::perform(http_req_head_para* req_head,
         return true;
     }
 
-    static const size_t kMaxPdefSize = 2 * 1024 * 1024; /* 2MB safety cap */
+    static const size_t kMaxPdefSize = 2 * 1024 * 1024;
     if (recv_body->size() > kMaxPdefSize) {
         set_pdef_error(res_head, send_body, 413, "PDEF too large");
         return true;
     }
 
-    /* Validate PDEF by parsing before persisting */
+
     char err[512] = {0};
     ProtocolDef* proto = pdef_parse_string(recv_body->c_str(), err, sizeof(err));
     if (!proto) {
@@ -711,7 +741,7 @@ bool CRxUrlHandlerPdefUpload::perform(http_req_head_para* req_head,
     }
     protocol_free(proto);
 
-    /* Ensure temp directory exists */
+
     std::string base_dir = get_configured_pdef_dir();
     if (base_dir.empty()) {
         base_dir = "/tmp/rxtracenetcap_pdef";
@@ -727,17 +757,17 @@ bool CRxUrlHandlerPdefUpload::perform(http_req_head_para* req_head,
         return true;
     }
 
-    // Generate temp file path
+
     char temp_path[256];
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    // Use /tmp/rxtracenetcap_pdef/rxtracenetcap_pdef_TIMESTAMP_RANDOM.pdef
+
     unsigned int r = static_cast<unsigned int>(rand());
     snprintf(temp_path, sizeof(temp_path), "%s/rxtracenetcap_pdef_%lu_%06lu_%u.pdef",
              base_dir.c_str(), static_cast<unsigned long>(tv.tv_sec),
              static_cast<unsigned long>(tv.tv_usec), r);
 
-    // Write body to file
+
     std::ofstream outfile(temp_path, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!outfile.is_open()) {
         set_pdef_error(res_head, send_body, 500, "Failed to open temp file");
@@ -752,11 +782,11 @@ bool CRxUrlHandlerPdefUpload::perform(http_req_head_para* req_head,
         return true;
     }
 
-    chmod(temp_path, S_IRUSR | S_IWUSR); /* 0600 */
+    chmod(temp_path, S_IRUSR | S_IWUSR);
 
     uint64_t checksum = fnv1a64(recv_body->c_str(), recv_body->size());
 
-    // Return path JSON
+
     std::ostringstream oss;
     oss << "{\"status\":\"ok\",\"path\":\"" << json_escape(temp_path)
         << "\",\"size\":" << recv_body->size()
@@ -884,7 +914,7 @@ bool CRxUrlHandlerPdefManagement::handle_get(http_req_head_para* req_head,
         target_path = path_it->second;
     } else if (name_it != params.end()) {
         std::string name = name_it->second;
-        
+
         std::vector<std::string> search_dirs;
         append_pdef_dirs(search_dirs);
 

@@ -25,36 +25,69 @@ public:
         }
     } log_config;
 
+    struct CaptureConfig {
+        std::string default_interface;
+        int default_duration;
+        std::string default_category;
+        std::string file_pattern;
+        long max_file_size_mb;
+
+        CaptureConfig()
+            : default_interface("any")
+            , default_duration(60)
+            , default_category("diag")
+            , file_pattern("{day}/{date}-{iface}-{proc}-{port}.pcap")
+            , max_file_size_mb(200)
+        {
+        }
+    } capture_config;
+
+    struct StorageConfig {
+        std::string base_dir;
+        int max_age_days;
+        long max_size_gb;
+        std::string temp_pdef_dir;
+        int temp_pdef_ttl_hours;
+
+        StorageConfig()
+            : base_dir("/var/log/rxtrace/captures")
+            , max_age_days(7)
+            , max_size_gb(100)
+            , temp_pdef_dir("/tmp/rxtracenetcap_pdef")
+            , temp_pdef_ttl_hours(24)
+        {
+        }
+    } storage_config;
+
     struct CleanupConfig {
-        std::string record_dir;
-        unsigned int record_max_size_mb;
-        unsigned int record_max_files;
         int compress_interval_sec;
-        unsigned long compress_threshold_mb;
+        unsigned int batch_compress_file_count;
+        unsigned long batch_compress_size_mb;
         std::string archive_dir;
-        std::string archive_format;
         int archive_keep_days;
         unsigned long archive_max_total_size_mb;
         bool archive_remove_source;
-        std::string pdef_dir;
-        int pdef_ttl_hours;
 
         CleanupConfig()
-            : record_dir("/var/log/rxtrace/cleanup")
-            , record_max_size_mb(50)
-            , record_max_files(5)
-            , compress_interval_sec(600)
-            , compress_threshold_mb(1024)
+            : compress_interval_sec(600)
+            , batch_compress_file_count(10)
+            , batch_compress_size_mb(1024)
             , archive_dir("/var/log/rxtrace/archives")
-            , archive_format("tar.gz")
             , archive_keep_days(14)
             , archive_max_total_size_mb(0)
             , archive_remove_source(true)
-            , pdef_dir("/tmp/rxtracenetcap_pdef")
-            , pdef_ttl_hours(24)
         {
         }
     } cleanup_config;
+
+    struct LimitsConfig {
+        int max_concurrent_captures;
+
+        LimitsConfig()
+            : max_concurrent_captures(8)
+        {
+        }
+    } limits_config;
 
     std::string log_path;
 
@@ -64,7 +97,10 @@ public:
     int capture_threads() const { return capture_threads_; }
     const std::string& strategy_path() const { return strategy_path_; }
     const std::string& loaded_path() const { return loaded_path_; }
+    const CaptureConfig& capture() const { return capture_config; }
+    const StorageConfig& storage() const { return storage_config; }
     const CleanupConfig& cleanup() const { return cleanup_config; }
+    const LimitsConfig& limits() const { return limits_config; }
 
 private:
     static std::string deduce_path_from_argv(const char* argv0);

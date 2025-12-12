@@ -12,7 +12,7 @@ namespace {
 }
 
 CRxSampleThread::CRxSampleThread()
-    : base_net_thread(1), interval_(1), type_(RX_THREAD_SAMPLE_TYPE)
+    : base_net_thread(1), type_(RX_THREAD_SAMPLE_TYPE)
 {
 }
 
@@ -54,7 +54,7 @@ void CRxSampleThread::schedule_timer()
     shared_ptr<timer_msg> t_msg(new timer_msg);
     t_msg->_obj_id = OBJ_ID_THREAD;
     t_msg->_timer_type = SAMPLE_TIMER_TYPE;
-    t_msg->_time_length = static_cast<uint32_t>(interval_ * 1000);
+    t_msg->_time_length = static_cast<uint32_t>(SAMPLE_INTERVAL_SEC * 1000);
     add_timer(t_msg);
 }
 
@@ -62,7 +62,6 @@ void CRxSampleThread::load_config()
 {
     CRxStrategyConfigManager* cfg = CRxProcData::instance()->current_strategy_config();
     if (cfg) {
-        interval_ = cfg->sample_interval_sec();
         thr_ = cfg->thresholds();
         modules_ = cfg->sample_modules();
     } else {
@@ -162,8 +161,8 @@ void CRxSampleThread::sample_system_stats(SRxSystemStats& stats)
             }
         }
 
-        stats.network_rx_kbps = (double)rx_bytes / 1024.0 / interval_;
-        stats.network_tx_kbps = (double)tx_bytes / 1024.0 / interval_;
+        stats.network_rx_kbps = (double)rx_bytes / 1024.0 / SAMPLE_INTERVAL_SEC;
+        stats.network_tx_kbps = (double)tx_bytes / 1024.0 / SAMPLE_INTERVAL_SEC;
 
         fclose(f);
     }

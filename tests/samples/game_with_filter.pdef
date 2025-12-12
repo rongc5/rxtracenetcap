@@ -1,7 +1,6 @@
 // Game protocol with filter rules
 @protocol {
     name = "MyGameProtocol";
-    ports = 7777, 7778;
     endian = big;
 }
 

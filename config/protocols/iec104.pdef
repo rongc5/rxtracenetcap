@@ -2,7 +2,6 @@
 
 @protocol {
     name = "IEC104";
-    ports = 2404;      // Default IEC 104 TCP port
     endian = little;   // Multi-byte fields use little-endian on the wire
 }
 

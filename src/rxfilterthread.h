@@ -16,18 +16,17 @@ using compat::dynamic_pointer_cast;
 using compat::const_pointer_cast;
 using compat::make_shared;
 
-/*
- * Packet message for inter-thread communication
- */
+struct SRxCaptureRawFileMsgV2;
+
 struct SRxPacketMsg : public normal_msg {
     struct pcap_pkthdr header;
     uint8_t data[65536];
     uint16_t src_port;
     uint16_t dst_port;
-    uint32_t app_offset;  /* offset to app data within 'data' */
+    uint32_t app_offset;
     uint32_t app_len;
     bool valid;
-    uint32_t writer_thread_index;  /* target writer thread */
+    uint32_t writer_thread_index;
 
     SRxPacketMsg() : normal_msg(RX_MSG_PACKET_CAPTURED),
                      src_port(0), dst_port(0),
@@ -39,33 +38,15 @@ struct SRxPacketMsg : public normal_msg {
     }
 };
 
-/*
- * Filter thread - receives packet messages from capture thread,
- * applies PDEF filtering (with sliding window support),
- * and forwards matched packets to writer thread via messages.
- *
- * Inherits from base_net_thread like other threads in the system.
- */
 class CRxFilterThread : public base_net_thread {
 public:
     CRxFilterThread();
     ~CRxFilterThread();
 
-    /**
-     * Initialize filter thread
-     * @param protocol_def PDEF protocol definition
-     * @param dump_ctx Dump context for writing packets to pcap files
-     */
     bool init(ProtocolDef* protocol_def, CRxDumpCtx* dump_ctx);
 
-    /**
-     * Start the filter thread
-     */
     bool start();
 
-    /**
-     * Get filter statistics
-     */
     struct FilterStats {
         unsigned long packets_processed;
         unsigned long packets_matched;
@@ -86,26 +67,30 @@ public:
     void reset_stats() { stats_ = FilterStats(); }
 
 protected:
-    /**
-     * Handle incoming messages (called by base_net_thread)
-     */
     virtual void handle_msg(shared_ptr<normal_msg>& p_msg);
 
 private:
-    /**
-     * Process a captured packet message
-     */
     void handle_packet_captured(shared_ptr<SRxPacketMsg>& packet_msg);
 
-    /**
-     * Apply PDEF filter to packet
-     */
+    void handle_raw_file(shared_ptr<SRxCaptureRawFileMsgV2>& raw_msg);
+
     bool apply_filter(const SRxPacketMsg* packet);
 
-    /**
-     * Write packet to pcap file
-     */
     void write_packet(const SRxPacketMsg* packet);
+
+    struct ParsedPacket {
+        const uint8_t* app_data;
+        uint32_t app_len;
+        uint16_t src_port;
+        uint16_t dst_port;
+        bool valid;
+    };
+    ParsedPacket parse_packet_data(const uint8_t* data, uint32_t len);
+
+    void send_endian_detected_to_manager(int manager_thread_index,
+                                        const std::string& pdef_path,
+                                        int detected_endian,
+                                        int capture_id);
 
 private:
     ProtocolDef* protocol_def_;
@@ -115,4 +100,4 @@ private:
     std::string name_;
 };
 
-#endif /* RX_FILTER_THREAD_H */
+#endif

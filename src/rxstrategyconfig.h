@@ -30,9 +30,6 @@ struct SRxLimits {
 
 struct SRxStorage {
     std::string base_dir;
-    bool compress_enabled;
-    std::string compress_cmd;
-    bool compress_remove_src;
     int max_age_days;
     long max_size_gb;
 
@@ -98,15 +95,12 @@ public:
     std::string get_default_iface() const { return defaults_.iface; }
     int get_default_duration() const { return defaults_.duration_sec; }
     std::string get_default_category() const { return defaults_.category; }
-    int sample_interval_sec() const { return sample_interval_sec_; }
-    int batch_compress_interval_sec() const { return batch_compress_interval_sec_; }
-    int queue_timer_interval_ms() const { return queue_timer_interval_ms_; }
 
     int get_progress_interval_sec() const { return storage_.progress_interval_sec; }
     int get_progress_packet_threshold() const { return storage_.progress_packet_threshold; }
     long get_progress_bytes_threshold() const { return storage_.progress_bytes_threshold; }
 
-    /* Protocol PDEF mapping: protocol_name -> pdef_file_path */
+
     std::string get_protocol_pdef_path(const std::string& protocol_name) const;
 
 private:
@@ -120,11 +114,8 @@ private:
     SRxThresholds thresholds_;
     std::vector<CRxSampleModule> sample_modules_;
     SRxLogging logging_;
-    std::map<std::string, std::string> protocol_pdefs_;  /* protocol_name -> pdef_path */
+    std::map<std::string, std::string> protocol_pdefs_;
 
-    int sample_interval_sec_;
-    int batch_compress_interval_sec_;
-    int queue_timer_interval_ms_;
     std::string config_path_;
     time_t last_load_time_;
 

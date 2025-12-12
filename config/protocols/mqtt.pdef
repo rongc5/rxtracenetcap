@@ -3,7 +3,6 @@
 
 @protocol {
     name = "MQTT";
-    ports = 1883, 8883;
     endian = big;
 }
 

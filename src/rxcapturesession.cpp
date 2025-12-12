@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-// PDEF includes
+
 #include "pdef/parser.h"
 #include "runtime/protocol.h"
 
@@ -68,82 +68,18 @@ bool CRxCaptureJob::prepare()
     dumper_context_.proc = cfg_.proc_name;
     dumper_context_.port = cfg_.port;
     dumper_context_.compress_enabled = parent_task_info_->compress_enabled;
-    dumper_context_.compress_cmd = parent_task_info_->compress_cmd;
 
-    // Initialize PDEF protocol filter
+
     dumper_context_.protocol_filter_path = cfg_.protocol_filter;
     dumper_context_.protocol_def = NULL;
     dumper_context_.packets_filtered = 0;
     dumper_context_.filter_thread_index = 0;
 
-    // Load PDEF: prefer inline content, then file path
-    if (!cfg_.protocol_filter_inline.empty()) {
-        // Parse inline PDEF content
-        char error_msg[512];
-        dumper_context_.protocol_def = pdef_parse_string(
-            cfg_.protocol_filter_inline.c_str(),
-            error_msg,
-            sizeof(error_msg)
-        );
 
-        if (!dumper_context_.protocol_def) {
-            fprintf(stderr, "[PDEF] Failed to parse inline protocol filter: %s\n", error_msg);
-            // Continue without filter rather than failing the capture
-        } else {
-            fprintf(stderr, "[PDEF] Loaded inline protocol filter: %s (%u rules)\n",
-                    dumper_context_.protocol_def->name,
-                    dumper_context_.protocol_def->filter_count);
-        }
-    } else if (!cfg_.protocol_filter.empty()) {
-        // Load PDEF from file
-        char error_msg[512];
-        dumper_context_.protocol_def = pdef_parse_file(
-            cfg_.protocol_filter.c_str(),
-            error_msg,
-            sizeof(error_msg)
-        );
+    use_filter_thread_ = false;
+    filter_thread_ = NULL;
 
-        if (!dumper_context_.protocol_def) {
-            fprintf(stderr, "[PDEF] Failed to load protocol filter '%s': %s\n",
-                    cfg_.protocol_filter.c_str(), error_msg);
-            // Continue without filter rather than failing the capture
-        } else {
-            fprintf(stderr, "[PDEF] Loaded protocol filter: %s (%u rules)\n",
-                    dumper_context_.protocol_def->name,
-                    dumper_context_.protocol_def->filter_count);
-        }
-    }
-
-    // Always create filter/writer thread for message-driven architecture
-    // If PDEF is loaded, it will filter; otherwise, it will write directly
-    use_filter_thread_ = true;
-    filter_thread_ = new (std::nothrow) CRxFilterThread();
-    if (!filter_thread_) {
-        fprintf(stderr, "[Filter] Failed to allocate filter/writer thread\n");
-        use_filter_thread_ = false;
-    } else {
-        // protocol_def can be NULL (no filtering, just write)
-        if (!filter_thread_->init(dumper_context_.protocol_def, &dumper_context_)) {
-            fprintf(stderr, "[Filter] Failed to initialize filter/writer thread\n");
-            delete filter_thread_;
-            filter_thread_ = NULL;
-            use_filter_thread_ = false;
-        } else if (!filter_thread_->start()) {
-            fprintf(stderr, "[Filter] Failed to start filter/writer thread\n");
-            delete filter_thread_;
-            filter_thread_ = NULL;
-            use_filter_thread_ = false;
-        } else {
-            dumper_context_.filter_thread_index = filter_thread_->get_thread_index();
-            if (dumper_context_.protocol_def) {
-                fprintf(stderr, "[Filter] Filter/writer thread started with PDEF filtering, thread_index=%u\n",
-                        filter_thread_->get_thread_index());
-            } else {
-                fprintf(stderr, "[Filter] Writer thread started (no PDEF, direct write), thread_index=%u\n",
-                        filter_thread_->get_thread_index());
-            }
-        }
-    }
+    fprintf(stderr, "[Capture] Direct write mode (PDEF filtering will be done offline if needed)\n");
 
     if (!cfg_.file_pattern.empty() || !parent_task_info_->base_dir.empty()) {
         CRxStorageUtils::rotate_open(&dumper_context_);
@@ -203,13 +139,13 @@ int CRxCaptureJob::run_once()
 
 void CRxCaptureJob::cleanup()
 {
-    // Stop and cleanup filter/writer thread
+
     if (filter_thread_) {
         fprintf(stderr, "[Filter] Stopping filter/writer thread...\n");
         filter_thread_->stop();
         filter_thread_->join_thread();
 
-        // Print filter thread statistics
+
         CRxFilterThread::FilterStats stats = filter_thread_->get_stats();
         if (dumper_context_.protocol_def) {
             fprintf(stderr, "[Filter] Thread stats: processed=%lu matched=%lu filtered=%lu\n",
@@ -223,7 +159,7 @@ void CRxCaptureJob::cleanup()
         filter_thread_ = NULL;
     }
 
-    // Print PDEF filter statistics if used
+
     if (dumper_context_.protocol_def) {
         fprintf(stderr, "[PDEF] Filtered %lu packets (did not match protocol filter)\n",
                 dumper_context_.packets_filtered);

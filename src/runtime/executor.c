@@ -2,7 +2,7 @@
 #include "../utils/endian.h"
 #include <string.h>
 
-/* Branch prediction hints (GCC/Clang) */
+
 #ifdef __GNUC__
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
@@ -16,12 +16,12 @@ bool execute_filter(const uint8_t* packet, uint32_t packet_len, const FilterRule
         return false;
     }
 
-    /* Quick boundary check: packet must be at least min_packet_size */
+
     if (unlikely(packet_len < rule->min_packet_size)) {
         return false;
     }
 
-    /* Execute the bytecode */
+
     return execute_bytecode(packet, packet_len, rule->bytecode, rule->bytecode_len);
 }
 
@@ -31,18 +31,18 @@ bool execute_bytecode(const uint8_t* packet, uint32_t packet_len,
         return false;
     }
 
-    uint32_t ip = 0;         /* Instruction pointer */
-    uint64_t acc = 0;        /* Accumulator register */
-    bool cmp_result = false; /* Comparison result flag */
+    uint32_t ip = 0;
+    uint64_t acc = 0;
+    bool cmp_result = false;
 
     while (ip < bytecode_len) {
         const Instruction* ins = &bytecode[ip];
 
         switch (ins->opcode) {
-            /* ========== Load Instructions ========== */
+
 
             case OP_LOAD_U8:
-                /* Boundary check */
+
                 if (unlikely(ins->offset + 1 > packet_len)) {
                     return false;
                 }
@@ -140,7 +140,7 @@ bool execute_bytecode(const uint8_t* packet, uint32_t packet_len,
                 acc = (uint64_t)read_i64_le(packet, ins->offset);
                 break;
 
-            /* ========== Comparison Instructions ========== */
+
 
             case OP_CMP_EQ:
                 cmp_result = (acc == ins->operand);
@@ -167,29 +167,29 @@ bool execute_bytecode(const uint8_t* packet, uint32_t packet_len,
                 break;
 
             case OP_CMP_MASK:
-                /* Mask comparison: (value & mask) == expected */
+
                 cmp_result = ((acc & ins->operand) == ins->operand2);
                 break;
 
-            /* ========== Control Flow Instructions ========== */
+
 
             case OP_JUMP_IF_FALSE:
                 if (!cmp_result) {
-                    /* Jump to target (adjust for ip++ at end of loop) */
+
                     if (unlikely(ins->jump_target >= bytecode_len)) {
-                        return false;  /* Invalid jump target */
+                        return false;
                     }
                     ip = ins->jump_target;
-                    continue;  /* Skip ip++ */
+                    continue;
                 }
                 break;
 
             case OP_JUMP:
                 if (unlikely(ins->jump_target >= bytecode_len)) {
-                    return false;  /* Invalid jump target */
+                    return false;
                 }
                 ip = ins->jump_target;
-                continue;  /* Skip ip++ */
+                continue;
 
             case OP_RETURN_TRUE:
                 return true;
@@ -198,13 +198,13 @@ bool execute_bytecode(const uint8_t* packet, uint32_t packet_len,
                 return false;
 
             default:
-                /* Unknown opcode, fail safe */
+
                 return false;
         }
 
         ip++;
     }
 
-    /* Fell through without explicit return: default to false */
+
     return false;
 }

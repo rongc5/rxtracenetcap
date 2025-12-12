@@ -22,6 +22,13 @@ void CRxHttpServer::start()
         return;
     }
 
+
+    LOG_NOTICE("Initializing capture and management threads...");
+    if (CRxProcData::instance()->init_threads() < 0) {
+        LOG_FATAL_MSG("Failed to initialize capture threads");
+        return;
+    }
+
     listen_thread * lthread = new (std::nothrow)listen_thread();
     lthread->init(_conf->bind_addr(), _conf->port());
     CRxProcData::instance()->add_name_thread("listen_thread", lthread);

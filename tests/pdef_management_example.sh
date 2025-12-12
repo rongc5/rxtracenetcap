@@ -36,7 +36,7 @@ echo "-------------------------------------------"
 TEST_PDEF=$(cat <<'EOF'
 protocol test_example {
   port 9999;
-  
+
   filter {
     match "TEST";
   }
@@ -57,7 +57,7 @@ if [ -n "$UPLOADED_PATH" ]; then
     echo "4.2 验证文件已在列表中..."
     curl -s -X GET "${BASE_URL}/api/pdef/list" | grep -q "$(basename "$UPLOADED_PATH")" && echo "? 文件在列表中" || echo "? 文件未在列表中"
     echo ""
-    
+
     echo "4.3 读取上传的PDEF内容..."
     curl -s -X GET "${BASE_URL}/api/pdef/get?path=${UPLOADED_PATH}" | python -m json.tool 2>/dev/null || curl -s -X GET "${BASE_URL}/api/pdef/get?path=${UPLOADED_PATH}"
     echo ""

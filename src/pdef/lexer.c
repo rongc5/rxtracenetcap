@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Helper functions */
+
 static bool is_alpha(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
@@ -55,7 +55,7 @@ static void skip_whitespace(Lexer* lexer) {
 
 static void skip_comment(Lexer* lexer) {
     if (current_char(lexer) == '/' && peek_char(lexer, 1) == '/') {
-        /* Skip until end of line */
+
         while (current_char(lexer) != '\0' && current_char(lexer) != '\n') {
             advance(lexer);
         }
@@ -81,7 +81,7 @@ static bool read_identifier(Lexer* lexer, Token* token) {
     }
     token->text[len] = '\0';
 
-    /* Check for keywords */
+
     if (strcmp(token->text, "uint8") == 0) {
         token->type = TOKEN_UINT8;
     } else if (strcmp(token->text, "uint16") == 0) {
@@ -107,11 +107,11 @@ static bool read_identifier(Lexer* lexer, Token* token) {
     } else if (strcmp(token->text, "in") == 0) {
         token->type = TOKEN_IN;
     } else if (strcmp(token->text, "big") == 0 || strcmp(token->text, "little") == 0) {
-        /* Endian keywords, treat as identifiers for now */
+
         token->type = TOKEN_IDENTIFIER;
     } else if (strcmp(token->text, "name") == 0 || strcmp(token->text, "ports") == 0 ||
                strcmp(token->text, "endian") == 0) {
-        /* Protocol metadata keywords, treat as identifiers */
+
         token->type = TOKEN_IDENTIFIER;
     } else {
         token->type = TOKEN_IDENTIFIER;
@@ -124,10 +124,10 @@ static bool read_number(Lexer* lexer, Token* token) {
     token->type = TOKEN_NUMBER;
     token->value = 0;
 
-    /* Hex number: 0x... or 0X... */
+
     if (current_char(lexer) == '0' && (peek_char(lexer, 1) == 'x' || peek_char(lexer, 1) == 'X')) {
-        advance(lexer);  /* Skip '0' */
-        advance(lexer);  /* Skip 'x' */
+        advance(lexer);
+        advance(lexer);
 
         uint32_t len = 0;
         while (is_hex_digit(current_char(lexer)) && len < sizeof(token->text) - 1) {
@@ -146,7 +146,7 @@ static bool read_number(Lexer* lexer, Token* token) {
         return true;
     }
 
-    /* Decimal number */
+
     uint32_t len = 0;
     while (is_digit(current_char(lexer)) && len < sizeof(token->text) - 1) {
         token->text[len++] = current_char(lexer);
@@ -161,14 +161,14 @@ static bool read_number(Lexer* lexer, Token* token) {
 static bool read_string(Lexer* lexer, Token* token) {
     token->type = TOKEN_STRING;
 
-    /* Skip opening quote */
+
     advance(lexer);
 
     uint32_t len = 0;
     while (current_char(lexer) != '"' && current_char(lexer) != '\0' &&
            len < sizeof(token->text) - 1) {
         if (current_char(lexer) == '\\' && peek_char(lexer, 1) == '"') {
-            /* Escaped quote */
+
             token->text[len++] = '"';
             advance(lexer);
             advance(lexer);
@@ -185,7 +185,7 @@ static bool read_string(Lexer* lexer, Token* token) {
         return false;
     }
 
-    /* Skip closing quote */
+
     advance(lexer);
     return true;
 }
@@ -193,7 +193,7 @@ static bool read_string(Lexer* lexer, Token* token) {
 bool lexer_next_token(Lexer* lexer, Token* token) {
     skip_whitespace_and_comments(lexer);
 
-    /* Store token position */
+
     token->line = lexer->line;
     token->column = lexer->column;
     token->text[0] = '\0';
@@ -201,28 +201,28 @@ bool lexer_next_token(Lexer* lexer, Token* token) {
 
     char c = current_char(lexer);
 
-    /* End of file */
+
     if (c == '\0') {
         token->type = TOKEN_EOF;
         return true;
     }
 
-    /* Identifiers and keywords */
+
     if (is_alpha(c)) {
         return read_identifier(lexer, token);
     }
 
-    /* Numbers */
+
     if (is_digit(c)) {
         return read_number(lexer, token);
     }
 
-    /* String literals */
+
     if (c == '"') {
         return read_string(lexer, token);
     }
 
-    /* Single-character tokens and operators */
+
     switch (c) {
         case '{':
             token->type = TOKEN_LBRACE;
@@ -276,7 +276,7 @@ bool lexer_next_token(Lexer* lexer, Token* token) {
         case '@':
             token->type = TOKEN_AT;
             advance(lexer);
-            /* Read keyword after @ */
+
             if (is_alpha(current_char(lexer))) {
                 uint32_t len = 0;
                 while (is_alnum(current_char(lexer)) && len < sizeof(token->text) - 1) {
@@ -371,7 +371,7 @@ bool lexer_next_token(Lexer* lexer, Token* token) {
             return true;
     }
 
-    /* Unknown character */
+
     snprintf(lexer->error_msg, sizeof(lexer->error_msg),
              "Unexpected character '%c' at line %u column %u", c, lexer->line, lexer->column);
     token->type = TOKEN_ERROR;
@@ -379,13 +379,13 @@ bool lexer_next_token(Lexer* lexer, Token* token) {
 }
 
 bool lexer_peek_token(Lexer* lexer, Token* token) {
-    /* Save lexer state */
+
     Lexer saved = *lexer;
 
-    /* Get next token */
+
     bool result = lexer_next_token(lexer, token);
 
-    /* Restore lexer state */
+
     *lexer = saved;
 
     return result;

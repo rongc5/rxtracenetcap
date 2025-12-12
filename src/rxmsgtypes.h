@@ -33,7 +33,6 @@ enum ERxCaptureMsg {
     RX_MSG_STOP_CAPTURE = 2002,
     RX_MSG_QUERY_CAPTURE = 2003,
     RX_MSG_CLEAN_EXPIRED = 2004,
-    RX_MSG_COMPRESS_FILES = 2005,
     RX_MSG_CHECK_THRESHOLD = 2006,
     RX_MSG_TASK_UPDATE = 2007,
 
@@ -48,6 +47,8 @@ enum ERxCaptureMsg {
     RX_MSG_CAPTURE_FINISHED = 30003,
     RX_MSG_CAPTURE_FAILED = 30004,
     RX_MSG_CAPTURE_HEARTBEAT = 30005,
+    RX_MSG_CAPTURE_RAW_FILE = 30006,
+    RX_MSG_CAPTURE_FILTERED_FILE = 30007,
 
     RX_MSG_FILE_ENQUEUE = 40000,
     RX_MSG_CLEAN_CFG_REFRESH = 40001,
@@ -71,24 +72,25 @@ enum ERxCleanupMsg {
 
 enum ERxReloadMsg {
     RX_MSG_RELOAD_CONFIG = 5001,
-    RX_MSG_PDEF_ENDIAN_DETECTED = 5002  /* PDEF endian auto-detection result */
+    RX_MSG_PDEF_ENDIAN_DETECTED = 5002
 };
 
-/* PDEF endian detection result message */
+
 struct SRxPdefEndianMsg : public normal_msg {
-    char pdef_file_path[256];  /* PDEF file path */
-    int detected_endian;       /* ENDIAN_TYPE_BIG or ENDIAN_TYPE_LITTLE */
+    char pdef_file_path[256];
+    int detected_endian;
+    int capture_id;
 
     SRxPdefEndianMsg()
-        : normal_msg(RX_MSG_PDEF_ENDIAN_DETECTED), detected_endian(0)
+        : normal_msg(RX_MSG_PDEF_ENDIAN_DETECTED), detected_endian(0), capture_id(0)
     {
         memset(pdef_file_path, 0, sizeof(pdef_file_path));
     }
 };
 
 enum ERxFilterMsg {
-    RX_MSG_PACKET_CAPTURED = 6001,  /* Packet captured, needs filtering */
-    RX_MSG_PACKET_FILTERED = 6002   /* Packet filtered, ready to write */
+    RX_MSG_PACKET_CAPTURED = 6001,
+    RX_MSG_PACKET_FILTERED = 6002
 };
 
 enum ERxBizMsg {
@@ -114,7 +116,6 @@ inline const char* rx_msg_type_to_string(int msg_type)
     if (msg_type == RX_MSG_STOP_CAPTURE) return "RX_MSG_STOP_CAPTURE";
     if (msg_type == RX_MSG_QUERY_CAPTURE) return "RX_MSG_QUERY_CAPTURE";
     if (msg_type == RX_MSG_CLEAN_EXPIRED) return "RX_MSG_CLEAN_EXPIRED";
-    if (msg_type == RX_MSG_COMPRESS_FILES) return "RX_MSG_COMPRESS_FILES";
     if (msg_type == RX_MSG_CHECK_THRESHOLD) return "RX_MSG_CHECK_THRESHOLD";
     if (msg_type == RX_MSG_TASK_UPDATE) return "RX_MSG_TASK_UPDATE";
     if (msg_type == RX_MSG_CAPTURE_START) return "RX_MSG_CAPTURE_START";
@@ -127,6 +128,8 @@ inline const char* rx_msg_type_to_string(int msg_type)
     if (msg_type == RX_MSG_CAPTURE_FINISHED) return "RX_MSG_CAPTURE_FINISHED";
     if (msg_type == RX_MSG_CAPTURE_FAILED) return "RX_MSG_CAPTURE_FAILED";
     if (msg_type == RX_MSG_CAPTURE_HEARTBEAT) return "RX_MSG_CAPTURE_HEARTBEAT";
+    if (msg_type == RX_MSG_CAPTURE_RAW_FILE) return "RX_MSG_CAPTURE_RAW_FILE";
+    if (msg_type == RX_MSG_CAPTURE_FILTERED_FILE) return "RX_MSG_CAPTURE_FILTERED_FILE";
     if (msg_type == RX_MSG_FILE_ENQUEUE) return "RX_MSG_FILE_ENQUEUE";
     if (msg_type == RX_MSG_CLEAN_CFG_REFRESH) return "RX_MSG_CLEAN_CFG_REFRESH";
     if (msg_type == RX_MSG_CLEAN_SHUTDOWN) return "RX_MSG_CLEAN_SHUTDOWN";

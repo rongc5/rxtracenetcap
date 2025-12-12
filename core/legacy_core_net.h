@@ -303,7 +303,7 @@ class base_connect:public base_net_obj
             std::string *p;
             while (_p_send_buf || (p = _process->get_send_buf()))
             {
-                ssize_t _send_ret;
+                ssize_t _send_ret = 0;
                 if (NULL == _p_send_buf)
                 {
                     _p_send_buf = p;

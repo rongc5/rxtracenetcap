@@ -3,7 +3,6 @@
 
 @protocol {
     name = "Redis";
-    ports = 6379;
     endian = big;
 }
 

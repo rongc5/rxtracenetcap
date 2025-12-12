@@ -42,7 +42,7 @@ void CRxReloadThread::handle_msg(shared_ptr<normal_msg> & p_msg)
     {
         case RX_MSG_PDEF_ENDIAN_DETECTED:
         {
-            /* Handle PDEF endian auto-detection result */
+
             shared_ptr<SRxPdefEndianMsg> endian_msg = dynamic_pointer_cast<SRxPdefEndianMsg>(p_msg);
             if (endian_msg) {
                 LOG_NOTICE("Received PDEF endian writeback request: %s -> %s",
@@ -83,19 +83,10 @@ void CRxReloadThread::handle_timeout(shared_ptr<timer_msg> & t_msg)
 void CRxReloadThread::reload_timer_start()
 {
     CRxProcData* p_data = CRxProcData::instance();
+    (void)p_data;
 
-    if (p_data && p_data->_strategy_dict)
-    {
-        CRxStrategyConfigManager* current = p_data->_strategy_dict->current();
-        if (current)
-        {
-            int interval = current->queue_timer_interval_ms();
-            if (interval > 0)
-            {
-                _reload_interval_ms = (uint32_t)interval;
-            }
-        }
-    }
+
+    _reload_interval_ms = 1000;
 
     shared_ptr<timer_msg> t_msg(new timer_msg);
     t_msg->_timer_type = TIMER_TYPE_RELOAD_CONF;
@@ -113,7 +104,7 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
 
     const char* endian_str = (detected_endian == ENDIAN_TYPE_BIG) ? "big" : "little";
 
-    /* Open file with read/write access */
+
     int fd = open(pdef_file_path, O_RDWR);
     if (fd < 0) {
         LOG_WARNING("Failed to open PDEF file for writeback: %s (insufficient permissions?)",
@@ -121,14 +112,14 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
         return;
     }
 
-    /* Acquire exclusive lock */
+
     if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
         LOG_WARNING("Failed to lock PDEF file (another process is writing): %s", pdef_file_path);
         close(fd);
         return;
     }
 
-    /* Read entire file content */
+
     std::string content;
     char buf[4096];
     ssize_t nread;
@@ -136,7 +127,7 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
         content.append(buf, nread);
     }
 
-    /* Check if "endian" is already configured */
+
     if (content.find("endian ") != std::string::npos) {
         LOG_NOTICE("PDEF file already has endian configuration, skipping writeback: %s",
                    pdef_file_path);
@@ -145,7 +136,7 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
         return;
     }
 
-    /* Find insertion position: after "protocol XXX {" */
+
     size_t protocol_pos = content.find("protocol ");
     if (protocol_pos == std::string::npos) {
         LOG_ERROR("Invalid PDEF file format (no 'protocol' keyword): %s", pdef_file_path);
@@ -162,25 +153,25 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
         return;
     }
 
-    /* Generate timestamp */
+
     time_t now = time(NULL);
     char timestamp[64];
     struct tm tm_buf;
     localtime_r(&now, &tm_buf);
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_buf);
 
-    /* Construct insertion line */
+
     char endian_line[256];
     snprintf(endian_line, sizeof(endian_line),
              "\n    endian %s;  # auto-detected on %s\n",
              endian_str, timestamp);
 
-    /* Insert endian line after opening brace */
+
     std::string new_content = content.substr(0, brace_pos + 1);
     new_content += endian_line;
     new_content += content.substr(brace_pos + 1);
 
-    /* Write back to file */
+
     if (ftruncate(fd, 0) != 0) {
         LOG_ERROR("Failed to truncate PDEF file: %s", pdef_file_path);
         flock(fd, LOCK_UN);
@@ -197,10 +188,10 @@ void CRxReloadThread::writeback_pdef_endian(const char* pdef_file_path, int dete
         return;
     }
 
-    /* Sync to disk */
+
     fsync(fd);
 
-    /* Release lock and close */
+
     flock(fd, LOCK_UN);
     close(fd);
 

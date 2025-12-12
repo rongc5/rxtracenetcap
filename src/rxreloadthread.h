@@ -23,7 +23,7 @@ class CRxReloadThread:public base_net_thread
         bool _is_first;
         uint32_t _reload_interval_ms;
 
-        /* Helper: write detected endian back to PDEF file */
+
         void writeback_pdef_endian(const char* pdef_file_path, int detected_endian);
 };
 

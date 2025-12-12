@@ -1,0 +1,39 @@
+{
+  "server": {
+    "bind_addr": "0.0.0.0",
+    "port": 8080,
+    "workers": 2,
+    "capture_threads": 4
+  },
+  "logging": {
+    "log_path": "logs/rxtracenetcap.log",
+    "log_prefix": "rxtrace",
+    "log_size_mb": 100,
+    "log_level": 16
+  },
+  "capture": {
+    "default_interface": "any",
+    "default_duration": 60,
+    "default_category": "diag",
+    "file_pattern": "{day}/{date}-{iface}-{proc}-{port}.pcap",
+    "max_file_size_mb": 200
+  },
+  "storage": {
+    "base_dir": "/var/log/rxtrace/captures",
+    "max_age_days": 7,
+    "max_size_gb": 10,
+    "temp_pdef_dir": "/var/log/rxtrace/pdef_tmp",
+    "temp_pdef_ttl_hours": 72
+  },
+  "cleanup": {
+    "batch_compress_file_count": 5,
+    "batch_compress_size_mb": 512,
+    "archive_dir": "/var/log/rxtrace/archives",
+    "archive_keep_days": 14,
+    "archive_max_total_size_mb": 0,
+    "archive_remove_source": true
+  },
+  "limits": {
+    "max_concurrent_captures": 8
+  }
+}

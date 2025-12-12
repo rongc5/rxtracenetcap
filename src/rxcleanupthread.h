@@ -12,13 +12,20 @@ using compat::const_pointer_cast;
 using compat::make_shared;
 #include <vector>
 
+
+static const int CLEANUP_INTERVAL_SEC = 60;
+
+
+static const unsigned long RECORD_MAX_SIZE_BYTES = 50 * 1024UL * 1024UL;
+static const unsigned int RECORD_MAX_FILES = 2;
+
 class CRxCleanupThread : public base_net_thread {
 public:
     CRxCleanupThread();
     ~CRxCleanupThread();
 
     bool start();
-    void configure(const CRxServerConfig::CleanupConfig& cfg);
+    void configure(const CRxServerConfig::CleanupConfig& cfg, const CRxServerConfig::StorageConfig& storage_cfg);
 
 protected:
     virtual void handle_msg(shared_ptr<normal_msg>& msg);
@@ -39,6 +46,7 @@ private:
     void enqueue_files(const SRxFileEnqueueMsgV2& enqueue_msg);
     void process_pending_files();
     bool compress_file(const PendingFile& pending, CaptureArchiveInfo& archive, std::string& error_msg);
+    bool compress_batch(const std::vector<PendingFile>& files, CaptureArchiveInfo& archive, std::string& error_msg);
     std::string record_file_metadata(int capture_id, const std::string& key, const CaptureFileInfo& info);
     void rotate_record_file_if_needed(size_t incoming_size);
     void prune_record_files();
@@ -47,6 +55,7 @@ private:
     void notify_archive_failure(int capture_id, const std::string& key, const std::string& sid, const std::vector<CaptureFileInfo>& files, const std::string& error);
     bool should_compress_size(unsigned long file_size, int policy_threshold_mb) const;
     void prune_archives();
+    std::string get_record_base_dir() const;
 
     int cleanup_interval_sec_;
     CRxServerConfig::CleanupConfig config_;

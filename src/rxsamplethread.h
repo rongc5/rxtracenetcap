@@ -15,6 +15,9 @@ using compat::dynamic_pointer_cast;
 using compat::const_pointer_cast;
 using compat::make_shared;
 
+
+static const int SAMPLE_INTERVAL_SEC = 15;
+
 struct SRxSystemStats {
     double cpu_percent;
     double memory_percent;
@@ -85,7 +88,6 @@ private:
 private:
     SRxThresholds thr_;
     std::vector<CRxSampleModule> modules_;
-    int interval_;
     int type_;
     std::string name_;
 };

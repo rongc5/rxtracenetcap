@@ -126,8 +126,8 @@ struct CaptureSpec {
     std::string category;
 
     std::string filter;
-    std::string protocol_filter;           // Path to .pdef file
-    std::string protocol_filter_inline;    // Inline PDEF content
+    std::string protocol_filter;
+    std::string protocol_filter_inline;
     std::string ip_filter;
     int port_filter;
 
@@ -313,6 +313,37 @@ struct SRxCaptureHeartbeatMsgV2 : public CaptureMessageBase {
     }
 };
 
+struct SRxCaptureRawFileMsgV2 : public CaptureMessageBase {
+    std::string raw_pcap_path;
+    std::string pdef_file_path;
+    std::string pdef_inline_content;
+    bool has_pdef_filter;
+    int manager_thread_index;
+
+    SRxCaptureRawFileMsgV2()
+        : CaptureMessageBase(RX_MSG_CAPTURE_RAW_FILE)
+        , has_pdef_filter(false)
+        , manager_thread_index(0)
+    {
+    }
+};
+
+struct SRxCaptureFilteredFileMsgV2 : public CaptureMessageBase {
+    std::string filtered_pcap_path;
+    unsigned long total_packets;
+    unsigned long filtered_packets;
+    unsigned long file_size;
+    std::string pdef_file_path;
+
+    SRxCaptureFilteredFileMsgV2()
+        : CaptureMessageBase(RX_MSG_CAPTURE_FILTERED_FILE)
+        , total_packets(0)
+        , filtered_packets(0)
+        , file_size(0)
+    {
+    }
+};
+
 struct SRxFileEnqueueMsgV2 : public CaptureMessageBase {
     std::vector<CaptureFileInfo> files;
     CaptureConfigSnapshot clean_policy;
@@ -398,8 +429,8 @@ struct SRxStartCaptureMsg : public normal_msg {
     std::string container_id;
     std::string netns_path;
     std::string filter;
-    std::string protocol_filter;           // Path to .pdef file
-    std::string protocol_filter_inline;    // Inline PDEF content
+    std::string protocol_filter;
+    std::string protocol_filter_inline;
     std::string ip_filter;
     int port_filter;
     std::string category;

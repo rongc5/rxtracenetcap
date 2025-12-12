@@ -3,7 +3,6 @@
 
 @protocol {
     name = "Memcached";
-    ports = 11211;
     endian = big;
 }
 

@@ -3,7 +3,6 @@
 
 @protocol {
     name = "DNS";
-    ports = 53;
     endian = big;
 }
 

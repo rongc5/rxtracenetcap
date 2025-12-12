@@ -13,8 +13,8 @@ struct CRxCaptureTaskCfg {
     std::string file_pattern;
     long max_bytes;
     std::string proc_name;
-    std::string protocol_filter;           // Path to .pdef file
-    std::string protocol_filter_inline;    // Inline PDEF content
+    std::string protocol_filter;
+    std::string protocol_filter_inline;
     int port;
     CRxCaptureTaskCfg() : duration_sec(0), max_bytes(0), port(0) {}
 };
@@ -30,7 +30,6 @@ struct CRxCaptureTaskInfo {
     volatile long finish_timestamp;
     std::string base_dir;
     bool compress_enabled;
-    std::string compress_cmd;
     bool compress_remove_src;
     void* post_sink;
     std::string resolved_path;

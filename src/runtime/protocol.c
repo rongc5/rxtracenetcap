@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Helper function: try to match packet with endian selection */
+
 static bool try_match_with_endian(
     const uint8_t* packet, uint32_t packet_len,
     const FilterRule* rule,
@@ -21,62 +21,62 @@ static bool try_match_with_endian(
 
     switch (mutable_proto->endian_mode) {
         case ENDIAN_MODE_BIG:
-            /* Force big-endian */
+
             return execute_bytecode(packet, packet_len, code_be, len_be);
 
         case ENDIAN_MODE_LITTLE:
-            /* Force little-endian */
+
             return execute_bytecode(packet, packet_len, code_le, len_le);
 
         case ENDIAN_MODE_AUTO:
         default: {
-            /* Auto-detection mode */
-            /* Use GCC built-in for atomic read (C++98 compatible) */
-            __sync_synchronize();  /* Memory barrier */
+
+
+            __sync_synchronize();
             int detected = mutable_proto->detected_endian;
 
             if (detected == ENDIAN_TYPE_BIG) {
-                /* Already detected as big-endian */
+
                 return execute_bytecode(packet, packet_len, code_be, len_be);
             }
 
             if (detected == ENDIAN_TYPE_LITTLE) {
-                /* Already detected as little-endian */
+
                 return execute_bytecode(packet, packet_len, code_le, len_le);
             }
 
-            /* Not yet detected (ENDIAN_TYPE_UNKNOWN) - try both */
 
-            /* Try big-endian first */
+
+
             if (execute_bytecode(packet, packet_len, code_be, len_be)) {
-                /* Success with big-endian! Use CAS to update atomically */
-                /* __sync_val_compare_and_swap returns old value */
+
+
                 int old_val = __sync_val_compare_and_swap(&mutable_proto->detected_endian,
                                                            ENDIAN_TYPE_UNKNOWN,
                                                            ENDIAN_TYPE_BIG);
                 if (old_val == ENDIAN_TYPE_UNKNOWN) {
-                    /* We are the first thread to detect it */
+
                     fprintf(stderr, "[PDEF] Auto-detected endian: big-endian for %s\n",
                             mutable_proto->name);
                 }
                 return true;
             }
 
-            /* Try little-endian */
+
             if (execute_bytecode(packet, packet_len, code_le, len_le)) {
-                /* Success with little-endian! Use CAS to update atomically */
+
                 int old_val = __sync_val_compare_and_swap(&mutable_proto->detected_endian,
                                                            ENDIAN_TYPE_UNKNOWN,
                                                            ENDIAN_TYPE_LITTLE);
                 if (old_val == ENDIAN_TYPE_UNKNOWN) {
-                    /* We are the first thread to detect it */
+
                     fprintf(stderr, "[PDEF] Auto-detected endian: little-endian for %s\n",
                             mutable_proto->name);
                 }
                 return true;
             }
 
-            /* No match with either endian */
+
             return false;
         }
     }
@@ -88,28 +88,19 @@ bool packet_filter_match(const uint8_t* packet, uint32_t packet_len,
         return false;
     }
 
-    /* Check if port matches (if ports are defined) */
-    if (proto->port_count > 0) {
-        bool port_match = false;
-        for (uint32_t i = 0; i < proto->port_count; i++) {
-            if (proto->ports[i] == port) {
-                port_match = true;
-                break;
-            }
-        }
-        if (!port_match) {
-            return false;
-        }
-    }
 
-    /* Cast to mutable for atomic endian detection updates */
+
+
+    (void)port;
+
+
     ProtocolDef* mutable_proto = (ProtocolDef*)proto;
 
-    /* Try each filter rule */
+
     for (uint32_t i = 0; i < proto->filter_count; i++) {
         const FilterRule* rule = &proto->filters[i];
 
-        /* Sliding window logic */
+
         if (rule->sliding_window) {
             uint32_t search_limit = packet_len;
             if (rule->sliding_max_offset > 0 && rule->sliding_max_offset < packet_len) {
@@ -128,14 +119,14 @@ bool packet_filter_match(const uint8_t* packet, uint32_t packet_len,
                 }
             }
         } else {
-            /* Non-sliding window: match from start */
+
             if (try_match_with_endian(packet, packet_len, rule, mutable_proto)) {
                 return true;
             }
         }
     }
 
-    return false;  /* No rules matched */
+    return false;
 }
 
 void protocol_free(ProtocolDef* proto) {
@@ -143,12 +134,12 @@ void protocol_free(ProtocolDef* proto) {
         return;
     }
 
-    /* Free ports */
+
     if (proto->ports) {
         free(proto->ports);
     }
 
-    /* Free structures */
+
     if (proto->structs) {
         for (uint32_t i = 0; i < proto->struct_count; i++) {
             if (proto->structs[i].fields) {
@@ -158,7 +149,7 @@ void protocol_free(ProtocolDef* proto) {
         free(proto->structs);
     }
 
-    /* Free filter rules */
+
     if (proto->filters) {
         for (uint32_t i = 0; i < proto->filter_count; i++) {
             if (proto->filters[i].bytecode) {
@@ -171,7 +162,7 @@ void protocol_free(ProtocolDef* proto) {
         free(proto->filters);
     }
 
-    /* Free constants */
+
     if (proto->constants) {
         ConstantEntry* entry = proto->constants;
         while (entry) {
@@ -203,7 +194,7 @@ bool protocol_find_constant(const ProtocolDef* proto, const char* name, uint64_t
         return false;
     }
 
-    /* Simple linear search (could use hash table for large constant sets) */
+
     ConstantEntry* entry = proto->constants;
     while (entry) {
         if (strcmp(entry->name, name) == 0) {
@@ -224,7 +215,7 @@ void protocol_print(const ProtocolDef* proto) {
     printf("Protocol: %s\n", proto->name);
     printf("Default endian: %s\n", proto->default_endian == ENDIAN_BIG ? "big" : "little");
 
-    /* Print ports */
+
     if (proto->port_count > 0) {
         printf("Ports: ");
         for (uint32_t i = 0; i < proto->port_count; i++) {
@@ -236,7 +227,7 @@ void protocol_print(const ProtocolDef* proto) {
         printf("\n");
     }
 
-    /* Print constants */
+
     if (proto->constant_count > 0) {
         printf("\nConstants (%u):\n", proto->constant_count);
         ConstantEntry* entry = proto->constants;
@@ -246,7 +237,7 @@ void protocol_print(const ProtocolDef* proto) {
         }
     }
 
-    /* Print structures */
+
     printf("\nStructures (%u):\n", proto->struct_count);
     for (uint32_t i = 0; i < proto->struct_count; i++) {
         const StructDef* s = &proto->structs[i];
@@ -260,7 +251,7 @@ void protocol_print(const ProtocolDef* proto) {
         }
     }
 
-    /* Print filter rules */
+
     printf("\nFilter Rules (%u):\n", proto->filter_count);
     for (uint32_t i = 0; i < proto->filter_count; i++) {
         const FilterRule* r = &proto->filters[i];

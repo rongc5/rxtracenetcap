@@ -43,9 +43,120 @@ struct HttpResponse {
 void print_usage(const char* argv0)
 {
     std::fprintf(stderr,
-        "Usage: %s <tasks.json> [--host HOST] [--port PORT] [--path PATH]\n"
-        "       Default host=127.0.0.1, port=8080, path=/api/capture/start\n",
-        argv0);
+        "用法: %s <tasks.json> [--host 主机] [--port 端口] [--path 路径]\n"
+        "      默认 host=127.0.0.1, port=8080, path=/api/capture/start\n"
+        "\n"
+        "选项:\n"
+        "  --host 主机     服务器主机名或 IP（默认: 127.0.0.1）\n"
+        "  --port 端口     服务器端口（默认: 8080）\n"
+        "  --path 路径     API 端点路径（默认: /api/capture/start）\n"
+        "  --help, -h     显示此帮助信息\n"
+        "\n"
+        "可用的 API 端点:\n"
+        "  /api/capture/start    - 启动新的抓包任务\n"
+        "  /api/capture/stop     - 停止正在运行的抓包\n"
+        "  /api/capture/status   - 查询抓包状态\n"
+        "  /api/capture/list     - 列出所有抓包任务\n"
+        "  /api/pdef/list        - 列出可用的 PDEF 文件\n"
+        "  /api/pdef/upload      - 上传 PDEF 协议定义\n"
+        "\n"
+        "任务 JSON 格式:\n"
+        "  任务文件必须包含一个 JSON 数组，每个元素为一个抓包任务对象。\n"
+        "  每个任务对象可以包含以下字段:\n"
+        "\n"
+        "  必填字段（至少一个）:\n"
+        "    iface              - 网络接口（如 \"eth0\", \"lo\", \"any\"）\n"
+        "    proc_name          - 进程名称（如 \"nginx\"）\n"
+        "    pid/target_pid     - 进程 ID\n"
+        "\n"
+        "  可选字段:\n"
+        "    duration           - 抓包时长（秒，默认: 60）\n"
+        "    filter / bpf       - BPF 过滤表达式（如 \"tcp port 80\"）\n"
+        "    file               - 输出文件路径（覆盖默认模式）\n"
+        "    file_pattern       - 文件模式，支持变量 {date}, {iface} 等\n"
+        "    category           - 抓包分类（如 \"diag\", \"perf\"）\n"
+        "    priority           - 优先级（如 \"high\", \"normal\"）\n"
+        "    protocol           - 内置 PDEF 协议名（如 \"http\"）\n"
+        "    protocol_filter    - 自定义 PDEF 文件路径\n"
+        "    protocol_filter_inline - 内联 PDEF 定义字符串\n"
+        "\n"
+        "使用示例:\n"
+        "\n"
+        "1. 基本网卡抓包:\n"
+        "   echo '[{\"iface\":\"eth0\",\"duration\":30,\"filter\":\"tcp port 80\"}]' > task.json\n"
+        "   %s task.json\n"
+        "\n"
+        "2. 按进程名抓包:\n"
+        "   echo '[{\"proc_name\":\"nginx\",\"duration\":60,\"filter\":\"tcp\"}]' > task.json\n"
+        "   %s task.json\n"
+        "\n"
+        "3. 按进程 PID 抓包:\n"
+        "   echo '[{\"pid\":1234,\"duration\":30,\"iface\":\"any\"}]' > task.json\n"
+        "   %s task.json\n"
+        "\n"
+        "4. 使用协议过滤（内置）:\n"
+        "   echo '[{\"iface\":\"eth0\",\"duration\":60,\"protocol\":\"http\"}]' > task.json\n"
+        "   %s task.json\n"
+        "\n"
+        "5. 使用自定义 PDEF 文件:\n"
+        "   echo '[{\"iface\":\"lo\",\"duration\":30,\"filter\":\"tcp port 9090\",\"protocol_filter\":\"my_protocol.pdef\"}]' > task.json\n"
+        "   %s task.json\n"
+        "\n"
+        "6. 多个抓包任务:\n"
+        "   cat > tasks.json << 'EOF'\n"
+        "   [\n"
+        "     {\"iface\":\"eth0\",\"duration\":30,\"filter\":\"tcp port 80\"},\n"
+        "     {\"proc_name\":\"redis\",\"duration\":30,\"protocol\":\"redis\"},\n"
+        "     {\"iface\":\"lo\",\"duration\":30,\"filter\":\"udp port 53\",\"protocol\":\"dns\"}\n"
+        "   ]\n"
+        "   EOF\n"
+        "   %s tasks.json\n"
+        "\n"
+        "7. 查询抓包状态:\n"
+        "   echo '[{\"capture_id\":1000}]' > query.json\n"
+        "   %s query.json --path /api/capture/status\n"
+        "\n"
+        "8. 停止抓包:\n"
+        "   echo '[{\"capture_id\":1000}]' > stop.json\n"
+        "   %s stop.json --path /api/capture/stop\n"
+        "\n"
+        "直接 API 示例（使用 curl）:\n"
+        "\n"
+        "  # 网卡抓包\n"
+        "  curl -X POST http://localhost:8080/api/capture/start \\\n"
+        "    -d '{\"iface\":\"eth0\",\"duration\":30,\"filter\":\"tcp port 80\"}'\n"
+        "\n"
+        "  # 进程抓包\n"
+        "  curl -X POST http://localhost:8080/api/capture/start \\\n"
+        "    -d '{\"proc_name\":\"nginx\",\"duration\":60}'\n"
+        "\n"
+        "  # 使用 PDEF 过滤\n"
+        "  curl -X POST http://localhost:8080/api/capture/start \\\n"
+        "    -d '{\"iface\":\"lo\",\"duration\":30,\"protocol_filter\":\"my.pdef\"}'\n"
+        "\n"
+        "  # 查询抓包状态（POST 方式）\n"
+        "  curl -X POST http://localhost:8080/api/capture/status \\\n"
+        "    -d '{\"capture_id\":1000}'\n"
+        "\n"
+        "  # 查询抓包状态（GET 方式）\n"
+        "  curl 'http://localhost:8080/api/capture/status?capture_id=1000'\n"
+        "\n"
+        "  # 停止抓包\n"
+        "  curl -X POST http://localhost:8080/api/capture/stop \\\n"
+        "    -d '{\"capture_id\":1000}'\n"
+        "\n"
+        "  # 列出所有抓包任务\n"
+        "  curl http://localhost:8080/api/capture/list\n"
+        "\n"
+        "  # 列出可用的 PDEF 文件\n"
+        "  curl http://localhost:8080/api/pdef/list\n"
+        "\n"
+        "  # 上传 PDEF 文件\n"
+        "  curl -X POST http://localhost:8080/api/pdef/upload \\\n"
+        "    -H 'Content-Type: multipart/form-data' \\\n"
+        "    -F 'pdef=@my_protocol.pdef'\n"
+        "\n",
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 bool read_file(const std::string& path, std::string* out, std::string* err)
@@ -191,6 +302,43 @@ bool build_task_payload(const rapidjson::Value& item, TaskRequest* task, std::st
 
     std::string summary;
 
+
+    if (item.HasMember("capture_id")) {
+        if (!item["capture_id"].IsInt() && !item["capture_id"].IsInt64()) {
+            if (err) *err = "capture_id must be an integer";
+            return false;
+        }
+        long long cid = item["capture_id"].IsInt64() ? item["capture_id"].GetInt64() : item["capture_id"].GetInt();
+        rapidjson::Value cid_json;
+        cid_json.SetInt64(cid);
+        payload.AddMember("capture_id", cid_json, alloc);
+        summary += "capture_id=" + to_string_int64(cid);
+    }
+
+    if (item.HasMember("id")) {
+        if (!item["id"].IsInt() && !item["id"].IsInt64()) {
+            if (err) *err = "id must be an integer";
+            return false;
+        }
+        long long id_val = item["id"].IsInt64() ? item["id"].GetInt64() : item["id"].GetInt();
+        rapidjson::Value id_json;
+        id_json.SetInt64(id_val);
+        payload.AddMember("id", id_json, alloc);
+        if (!summary.empty()) summary += " ";
+        summary += "id=" + to_string_int64(id_val);
+    }
+
+    if (item.HasMember("sid")) {
+        if (!item["sid"].IsString()) {
+            if (err) *err = "sid must be a string";
+            return false;
+        }
+        payload.AddMember("sid", rapidjson::Value(item["sid"].GetString(), alloc).Move(), alloc);
+        if (!summary.empty()) summary += " ";
+        summary += "sid=";
+        summary += item["sid"].GetString();
+    }
+
     if (item.HasMember("iface")) {
         if (!item["iface"].IsString()) {
             if (err) *err = "iface must be a string";
@@ -303,6 +451,23 @@ bool build_task_payload(const rapidjson::Value& item, TaskRequest* task, std::st
         payload.AddMember("protocol", rapidjson::Value(item["protocol"].GetString(), alloc).Move(), alloc);
     }
 
+
+    if (item.HasMember("protocol_filter")) {
+        if (!item["protocol_filter"].IsString()) {
+            if (err) *err = "protocol_filter must be a string";
+            return false;
+        }
+        payload.AddMember("protocol_filter", rapidjson::Value(item["protocol_filter"].GetString(), alloc).Move(), alloc);
+    }
+
+    if (item.HasMember("protocol_filter_inline")) {
+        if (!item["protocol_filter_inline"].IsString()) {
+            if (err) *err = "protocol_filter_inline must be a string";
+            return false;
+        }
+        payload.AddMember("protocol_filter_inline", rapidjson::Value(item["protocol_filter_inline"].GetString(), alloc).Move(), alloc);
+    }
+
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     payload.Accept(writer);
@@ -374,7 +539,7 @@ bool recv_all(int sockfd, std::string* out)
                 size_t pos = out->find("\r\n\r\n");
                 if (pos != std::string::npos) {
                     header_end_pos = pos + 4;
-                    
+
                     size_t cl_pos = out->find("Content-Length:", 0);
                     if (cl_pos != std::string::npos && cl_pos < header_end_pos) {
                         size_t cl_end_line = out->find("\r\n", cl_pos);
@@ -398,7 +563,7 @@ bool recv_all(int sockfd, std::string* out)
             continue;
         }
         if (n == 0) {
-            return true; 
+            return true;
         }
         if (errno == EINTR) {
             continue;
@@ -439,7 +604,7 @@ bool send_http_post(const std::string& host,
             continue;
         }
         if (::connect(sockfd, p->ai_addr, p->ai_addrlen) == 0) {
-            break; 
+            break;
         }
         ::close(sockfd);
         sockfd = -1;
@@ -561,7 +726,7 @@ void summarize_response(const HttpResponse& resp)
     }
 }
 
-} 
+}
 
 int main(int argc, char* argv[])
 {
